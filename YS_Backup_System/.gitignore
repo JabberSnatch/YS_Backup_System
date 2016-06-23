@@ -2,7 +2,7 @@ Build/*
 Intermediate/*
 TestEnv/*
 
-.vs/*
+*.vs/*
 *.opensdf
 *.sdf
 *.opendb
