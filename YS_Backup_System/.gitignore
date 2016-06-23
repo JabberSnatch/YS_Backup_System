@@ -1,6 +1,5 @@
 Build/*
 Intermediate/*
-TestEnv/*
 
 *.vs/*
 *.opensdf
