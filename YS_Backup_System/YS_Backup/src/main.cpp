@@ -16,14 +16,23 @@
 }
 
 
+#define LG_CHCKD(func) assert(func >= 0);
+
+
 // {9CA77349-841E-411B-BCF6-C1CAA357A491}
 static const GUID	app_guid =
 { 0x9ca77349, 0x841e, 0x411b,{ 0xbc, 0xf6, 0xc1, 0xca, 0xa3, 0x57, 0xa4, 0x91 } };
 
 const std::string	test_env_root = "./TestEnv/";
 
+// NOTE: The main drive is where the repo should be first created.
+const std::string	test_main_drive = "main/";
+const std::string	test_drive_A = "A/";
+const std::string	test_drive_B = "B/";
 
 
+
+int ys_git_add_all(const char*, const char*, void*);
 
 
 int main(int, char**);
@@ -31,6 +40,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int);
 
 void InstallService(PWSTR, PWSTR, DWORD);
 void UninstallService(PWSTR);
+
+
+int
+ys_git_add_all(const char* path,
+			   const char* matched_pathspec,
+			   void* payload)
+{
+	return 0;
+}
+
 
 int
 main(int, char**)
@@ -43,7 +62,117 @@ int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 {
 
-	
+	{
+		int ret_code = 0;
+		git_libgit2_init();
+		
+		git_signature*	signature;
+		ret_code = git_signature_now(&signature, 
+									 "YS_Backup", 
+									 "YS_Backup@notanemail.ys");
+
+		// MAIN DRIVE REPOSITORY CREATION
+		{
+			std::string		repo_path = test_env_root + test_main_drive;
+			git_repository* repo;
+			git_index*		index;
+			git_oid			tree_id, commit_id;
+			git_tree*		tree;
+
+			git_commit*		head_commit;
+
+			bool			repo_exists;
+			repo_exists = git_repository_open_ext(nullptr, repo_path.c_str(),
+												  GIT_REPOSITORY_OPEN_NO_SEARCH,
+												  nullptr) == 0;
+
+			LG_CHCKD(git_repository_init(&repo, repo_path.c_str(), false));
+			LG_CHCKD(git_repository_index(&index, repo));
+
+			LG_CHCKD(git_index_write_tree(&tree_id, index));
+			LG_CHCKD(git_tree_lookup(&tree, repo, &tree_id));
+
+			// FIRST COMMIT
+			if (!repo_exists)
+			{
+				ret_code = git_commit_create_v(&commit_id, repo, "HEAD", 
+											   signature, signature, 
+											   nullptr, "",
+											   tree, 0);
+				assert(ret_code >= 0);
+
+				git_commit_lookup(&head_commit, repo, &commit_id);
+			}
+			else
+			{
+				git_oid		head_id;
+
+				LG_CHCKD(git_reference_name_to_id(&head_id, repo, "HEAD"));
+				git_commit_lookup(&head_commit, repo, &head_id);
+			}
+
+			// ANY OTHER COMMIT
+			{
+				// TODO: Make sure that we actually have files to commit.
+				char*			paths[] = { "." };
+				git_strarray	arr = { paths, 1 };
+				ret_code = git_index_add_all(index, &arr, 
+											 GIT_INDEX_ADD_DEFAULT, 
+											 ys_git_add_all, nullptr);
+				assert(ret_code >= 0);
+
+				git_index_write(index);
+				git_index_write_tree(&tree_id, index);
+				git_tree_lookup(&tree, repo, &tree_id);
+
+				const git_commit* parents[] = { head_commit };
+				ret_code = git_commit_create(&commit_id, repo, "HEAD",
+											 signature, signature,
+											 "UTF-8", "",
+											 tree, 1, parents);
+				assert(ret_code >= 0);
+			}
+			
+			git_index_free(index);
+			git_repository_free(repo);
+		}
+
+		// SATELLITE DRIVES CLONE
+		{
+			std::string		repo_path = test_env_root + test_drive_A;
+			git_repository* repo;
+			git_remote*		origin;
+			bool			repo_exists;
+				
+			repo_exists = git_repository_open_ext(nullptr, repo_path.c_str(),
+												  GIT_REPOSITORY_OPEN_NO_SEARCH,
+												  nullptr) == 0;
+			if (!repo_exists)
+			{
+				std::string		source_path = test_env_root + test_main_drive;
+
+				git_clone(&repo, source_path.c_str(), repo_path.c_str(), nullptr);
+			}
+			else
+			{
+				git_fetch_options	fetch_options = GIT_FETCH_OPTIONS_INIT;
+
+				git_repository_open(&repo, repo_path.c_str());
+
+				git_remote_lookup(&origin, repo, "origin");
+				git_remote_fetch(origin, nullptr, 
+								 &fetch_options, nullptr);
+			
+				// TODO: Update the local index according to the data we fetched.
+				//		 FETCH_HEAD should hold the results.
+			}
+		}
+
+		git_signature_free(signature);
+		git_libgit2_shutdown();
+	}
+
+	if (0)
 	{
 		InstallService(L"YS_BackupService",
 					   L"YS_BackupService",
