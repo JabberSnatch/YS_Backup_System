@@ -1,0 +1,9 @@
+Build/*
+Intermediate/*
+TestEnv/*
+
+.vs/*
+*.opensdf
+*.sdf
+*.opendb
+*.db
