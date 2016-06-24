@@ -115,40 +115,52 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				git_tree_free(tree);
 			}
 
-			// COMMIT CHANGES TO CENTRAL
+			// RUN SOME KIND OF GIT STATUS
+			bool needs_commit = false;
 			{
-				git_index*		index;
+				git_status_options	status_options = GIT_STATUS_OPTIONS_INIT;
+				status_options.flags = 
+					GIT_STATUS_OPT_INCLUDE_UNTRACKED |
+					GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
+
+				git_status_list*	statuses = nullptr;
+				
+				git_status_list_new(&statuses, repo, &status_options);
+				size_t status_count = git_status_list_entrycount(statuses);
+
+				needs_commit = status_count > 0;
+
+				git_status_list_free(statuses);
+			}
+
+			// COMMIT CHANGES TO CENTRAL
+			if (needs_commit)
+			{
+				const git_commit*	parents[] = { head_commit };
+				char*				paths[] = { "." };
+				git_strarray		arr = { paths, 1 };
+				git_index*			index;
+				git_oid				commit_id, tree_id;
+				git_tree*			tree;
 
 				git_repository_index(&index, repo);
-
-				// TODO: Make sure that we actually have files to commit.
-				char*			paths[] = { "." };
-				git_strarray	arr = { paths, 1 };
 
 				LG_CHCKD(
 					git_index_add_all(index, &arr, 
 									  GIT_INDEX_ADD_DEFAULT, 
 									  ys_git_add_all, nullptr));
 
-				// IF THERE IS ACTUALLY SOMETHING TO COMMIT
-				{
-					git_oid			commit_id, tree_id;
-					git_tree*		tree;
+				git_index_write(index);
+				git_index_write_tree(&tree_id, index);
+				git_tree_lookup(&tree, repo, &tree_id);
 
-					git_index_write(index);
-					git_index_write_tree(&tree_id, index);
-					git_tree_lookup(&tree, repo, &tree_id);
-
-					const git_commit* parents[] = { head_commit };
-					LG_CHCKD(
-						git_commit_create(&commit_id, repo, "HEAD",
-										  signature, signature,
-										  "UTF-8", "",
-										  tree, 1, parents));
+				LG_CHCKD(
+					git_commit_create(&commit_id, repo, "HEAD",
+										signature, signature,
+										"UTF-8", "",
+										tree, 1, parents));
 				
-					git_tree_free(tree);
-				}
-
+				git_tree_free(tree);
 				git_index_free(index);
 			}
 			
@@ -167,21 +179,65 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 												  nullptr) == 0;
 			if (repo_exists)
 			{
-				git_remote*			origin;
-				git_fetch_options	fetch_options = GIT_FETCH_OPTIONS_INIT;
+				git_remote*				origin;
+				git_oid					fetch_head_id;
+				git_reference*			fetch_head_ref;
+				git_annotated_commit*	fetch_head_commit;
 
 				LG_CHCKD(
 					git_repository_open(&repo, repo_path.c_str()));
 
 				git_remote_lookup(&origin, repo, "origin");
+				
+				git_fetch_options	fetch_options = GIT_FETCH_OPTIONS_INIT;
 				git_remote_fetch(origin, nullptr, 
-								 &fetch_options, nullptr);
-			
+								 &fetch_options, "fetch");
+
+
 				// TODO: Update the local index according to the data we fetched.
 				//		 FETCH_HEAD should hold the results.
-			
+				if (0)
+				{
+					git_reference_name_to_id(&fetch_head_id, repo, "FETCH_HEAD");
+					git_reference_lookup(&fetch_head_ref, repo, "FETCH_HEAD");
+					git_annotated_commit_from_ref(&fetch_head_commit, repo, fetch_head_ref);
+
+					const git_annotated_commit* const_head_commit = fetch_head_commit;
+					git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
+					//merge_options.flags = GIT_MERGE_FIND_RENAMES;
+					merge_options.file_favor = GIT_MERGE_FILE_FAVOR_NORMAL;
+					merge_options.file_flags = GIT_MERGE_FILE_DEFAULT;
+					git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
+					LG_CHCKD(git_merge(repo, &const_head_commit, 1,
+							 &merge_options, &checkout_options));
+				}
+
+				// NOTE: This conflict resolution should be alright.
+				if (0)
+				{
+					git_index*						local_index;
+					git_index_conflict_iterator*	conflict_ite;
+					git_repository_index(&local_index, repo);
+					git_index_conflict_iterator_new(&conflict_ite, local_index);
+				
+					const git_index_entry*	ancestor;
+					const git_index_entry*	ours;
+					const git_index_entry*	theirs;
+					while (git_index_conflict_next(&ancestor, &ours, &theirs, 
+						   conflict_ite) != GIT_ITEROVER)
+					{
+						if (ours->mtime.seconds > theirs->mtime.seconds)
+							git_index_entry_stage(ours);
+						else
+							git_index_entry_stage(theirs);
+					}
+
+					git_index_conflict_iterator_free(conflict_ite);
+				}
+
+
 				git_remote_free(origin);
-			}
+			} // if (repo_exists)
 			else
 			{
 				std::string		source_path = test_env_root + test_main_drive;
