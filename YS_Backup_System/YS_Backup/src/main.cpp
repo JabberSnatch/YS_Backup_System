@@ -16,7 +16,15 @@
 }
 
 
-#define LG_CHCKD(func) assert(func >= 0);
+#define LG_CHCKD(func) \
+{\
+	int error = func;\
+	if (error < 0) {\
+		const git_error* e = giterr_last();\
+		std::cout << "Git error : " << error << e->klass << " : " << e->message << std::endl;\
+		assert(!"Git raised an error, please check the logs");\
+	}\
+}
 
 
 // {9CA77349-841E-411B-BCF6-C1CAA357A491}
@@ -33,6 +41,11 @@ const std::string	test_drive_B = "B/";
 
 
 int ys_git_add_all(const char*, const char*, void*);
+int ys_git_find_merge_branch(const char *ref_name,
+							 const char *remote_url,
+							 const git_oid *oid,
+							 unsigned int is_merge,
+							 void *payload);
 
 
 int main(int, char**);
@@ -47,6 +60,22 @@ ys_git_add_all(const char* path,
 			   const char* matched_pathspec,
 			   void* payload)
 {
+	return 0;
+}
+
+
+int
+ys_git_find_merge_branch(const char* ref_name, const char* remote_url,
+						 const git_oid* oid, unsigned int is_merge,
+						 void* payload)
+{
+	if (is_merge)
+	{
+		git_oid* p_result = (git_oid*)payload;
+		memcpy(p_result->id, oid->id, GIT_OID_RAWSZ * sizeof(unsigned char));
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -193,25 +222,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 
 				// TODO: Update the local index according to the data we fetched.
 				//		 FETCH_HEAD should hold the results.
-				if (0)
-				{
-					git_oid					fetch_head_id;
-					git_reference*			fetch_head_ref;
-					git_annotated_commit*	fetch_head_commit;
-
-					git_reference_name_to_id(&fetch_head_id, repo, "FETCH_HEAD");
-					git_reference_lookup(&fetch_head_ref, repo, "FETCH_HEAD");
-					git_annotated_commit_from_ref(&fetch_head_commit, repo, fetch_head_ref);
-
-					const git_annotated_commit* const_head_commit = fetch_head_commit;
-					git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
-					//merge_options.flags = GIT_MERGE_FIND_RENAMES;
-					merge_options.file_favor = GIT_MERGE_FILE_FAVOR_NORMAL;
-					merge_options.file_flags = GIT_MERGE_FILE_DEFAULT;
-					git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
-					LG_CHCKD(git_merge(repo, &const_head_commit, 1,
-							 &merge_options, &checkout_options));
-				}
 
 				// Still not working. Maybe next time.
 				if (0)
@@ -282,8 +292,64 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 					git_index_free(working_index);
 				}
 
+				{
+					git_reference*			fetch_head_ref;
+					git_annotated_commit*	fetch_head_commit;
+
+					//LG_CHCKD(
+					//	git_reference_lookup(&fetch_head_ref, repo, "FETCH_HEAD"));
+					//git_annotated_commit_from_ref(&fetch_head_commit, repo, fetch_head_ref);
+
+					git_oid					commit_to_merge;
+					git_repository_fetchhead_foreach(repo, ys_git_find_merge_branch,
+													 &commit_to_merge);
+					git_annotated_commit_lookup(&fetch_head_commit, repo, &commit_to_merge);
+
+					const git_annotated_commit* const_head_commit = fetch_head_commit;
+					
+					git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
+					//merge_options.flags = GIT_MERGE_FIND_RENAMES;
+					merge_options.file_favor = GIT_MERGE_FILE_FAVOR_NORMAL;
+					merge_options.file_flags = GIT_MERGE_FILE_DEFAULT;
+					git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
+					checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+					LG_CHCKD(
+						git_merge(repo, &const_head_commit, 1,
+								  &merge_options, &checkout_options));
+					
+
+					git_oid		merge_head_id, origin_head_id;
+					git_commit* merge_head_commit, *origin_head_commit;
+					git_reference_name_to_id(&merge_head_id, repo, "MERGE_HEAD");
+					git_commit_lookup(&merge_head_commit, repo, &merge_head_id);
+					git_reference_name_to_id(&origin_head_id, repo, "ORIG_HEAD");
+					git_commit_lookup(&origin_head_commit, repo, &origin_head_id);
+					const git_commit* parents[] = { origin_head_commit, merge_head_commit };
+
+					git_tree*	head_tree;
+					{
+						git_object*		object;
+						git_revparse_single(&object, repo, "HEAD^{tree}");
+						head_tree = (git_tree*)object;
+					}
+
+					git_oid		commit_id;
+					git_commit_create(&commit_id, repo, "HEAD",
+									  signature, signature, 
+									  "UTF-8", "",
+									  head_tree,
+									  2, parents);
+
+
+					git_tree_free(head_tree);
+					git_commit_free(merge_head_commit);
+					git_commit_free(origin_head_commit);
+					git_annotated_commit_free(fetch_head_commit);
+					//git_reference_free(fetch_head_ref);
+				}
+
 				// NOTE: This conflict resolution should be alright.
-				if (0)
 				{
 					git_index*						local_index;
 					git_index_conflict_iterator*	conflict_ite;
@@ -301,8 +367,10 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 						else
 							git_index_entry_stage(theirs);
 					}
-
+					
 					git_index_conflict_iterator_free(conflict_ite);
+					git_index_free(local_index);
+					git_repository_state_cleanup(repo);
 				}
 
 
