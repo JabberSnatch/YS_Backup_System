@@ -206,8 +206,10 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			repo_exists = git_repository_open_ext(nullptr, repo_path.c_str(),
 												  GIT_REPOSITORY_OPEN_NO_SEARCH,
 												  nullptr) == 0;
+			
 			if (repo_exists)
 			{
+				// NOTE: If the repository exists, we have to pull modifications from remote.
 				git_remote*				origin;
 
 				LG_CHCKD(
@@ -219,135 +221,40 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				git_remote_fetch(origin, nullptr, 
 								 &fetch_options, "fetch");
 
+				// NOTE: First we gather data relative to our fetch_head
+				git_reference*			fetch_head_ref;
+				git_annotated_commit*	fetch_head_commit;
+				git_oid					fetch_head_oid;
 
-				// TODO: Update the local index according to the data we fetched.
-				//		 FETCH_HEAD should hold the results.
-
-				// Still not working. Maybe next time.
-				if (0)
+				git_reference_lookup(&fetch_head_ref, repo, "FETCH_HEAD");
+					
+				git_annotated_commit_from_ref(&fetch_head_commit, repo,
+												fetch_head_ref);
+				// THIS IS WHERE WE COULD DO A MERGE ANALYSIS
+				
+				// IN CASE OF A FAST-FORWARD MERGE
 				{
-					git_oid					fetch_head_id;
-					git_commit*				fetch_head_commit;
-					git_oid					local_head_id;
-					git_commit*				local_head_commit;
-					git_index*				merge_result_index;
-
-					git_reference_name_to_id(&fetch_head_id, repo, "FETCH_HEAD");
-					git_reference_name_to_id(&local_head_id, repo, "HEAD");
-					git_commit_lookup(&fetch_head_commit, repo, &fetch_head_id);
-					git_commit_lookup(&local_head_commit, repo, &local_head_id);
-
-					git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
-					merge_options.file_favor = GIT_MERGE_FILE_FAVOR_NORMAL;
-					merge_options.file_flags = GIT_MERGE_FILE_DEFAULT;
+					// NOTE: Then we perform a fast-forward merge. 
+					//		 - Change the master ref target
+					//		 - Checkout head
+					git_reference*			merge_result_head;
+					git_reference*			master_head_ref;
 					
-					LG_CHCKD(
-					git_merge_commits(&merge_result_index, repo,
-									  local_head_commit, fetch_head_commit,
-									  &merge_options));
+					git_reference_lookup(&master_head_ref, repo, "refs/heads/master");
 
-					assert(!git_index_has_conflicts(merge_result_index));
+					git_oid_cpy(&fetch_head_oid, git_reference_target(fetch_head_ref));
+					git_reference_set_target(&merge_result_head, master_head_ref,
+											 &fetch_head_oid, "fast-forward");
 					
-
-					git_index*				working_index;
-					git_repository_index(&working_index, repo);
-
-					for (size_t i = 0; i < git_index_entrycount(merge_result_index);
-						 ++i)
-					{
-						const git_index_entry*	current_entry;
-						current_entry = git_index_get_byindex(merge_result_index,
-															  i);
-					
-						git_index_add(working_index, current_entry);
-					}
-
-					git_index_write(working_index);
-
-					git_oid					working_tree_id;
-					git_tree*				working_tree;
-					git_index_write_tree(&working_tree_id, working_index);
-					git_tree_lookup(&working_tree, repo, &working_tree_id);
-
-					// TODO: git_commit* ys_get_commit(git_repository*, string)
-					git_oid					head_id;
-					git_commit*				head_commit;
-					git_reference_name_to_id(&head_id, repo, "HEAD");
-					git_commit_lookup(&head_commit, repo, &head_id);
-
-					git_oid					commit_id;
-					const git_commit* parents[] = { head_commit };
-					LG_CHCKD(
-						git_commit_create(&commit_id, repo, "HEAD",
-										  signature, signature,
-										  "UTF-8", "",
-										  working_tree, 1, parents)
-					);
-					
-					git_commit_free(fetch_head_commit);
-					git_commit_free(local_head_commit);
-					git_commit_free(head_commit);
-					git_tree_free(working_tree);
-					git_index_free(merge_result_index);
-					git_index_free(working_index);
-				}
-
-				{
-					git_reference*			fetch_head_ref;
-					git_annotated_commit*	fetch_head_commit;
-
-					//LG_CHCKD(
-					//	git_reference_lookup(&fetch_head_ref, repo, "FETCH_HEAD"));
-					//git_annotated_commit_from_ref(&fetch_head_commit, repo, fetch_head_ref);
-
-					git_oid					commit_to_merge;
-					git_repository_fetchhead_foreach(repo, ys_git_find_merge_branch,
-													 &commit_to_merge);
-					git_annotated_commit_lookup(&fetch_head_commit, repo, &commit_to_merge);
-
-					const git_annotated_commit* const_head_commit = fetch_head_commit;
-					
-					git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
-					//merge_options.flags = GIT_MERGE_FIND_RENAMES;
-					merge_options.file_favor = GIT_MERGE_FILE_FAVOR_NORMAL;
-					merge_options.file_flags = GIT_MERGE_FILE_DEFAULT;
 					git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
 					checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
+					git_checkout_head(repo, &checkout_options);
 
-					LG_CHCKD(
-						git_merge(repo, &const_head_commit, 1,
-								  &merge_options, &checkout_options));
-					
-
-					git_oid		merge_head_id, origin_head_id;
-					git_commit* merge_head_commit, *origin_head_commit;
-					git_reference_name_to_id(&merge_head_id, repo, "MERGE_HEAD");
-					git_commit_lookup(&merge_head_commit, repo, &merge_head_id);
-					git_reference_name_to_id(&origin_head_id, repo, "ORIG_HEAD");
-					git_commit_lookup(&origin_head_commit, repo, &origin_head_id);
-					const git_commit* parents[] = { origin_head_commit, merge_head_commit };
-
-					git_tree*	head_tree;
-					{
-						git_object*		object;
-						git_revparse_single(&object, repo, "HEAD^{tree}");
-						head_tree = (git_tree*)object;
-					}
-
-					git_oid		commit_id;
-					git_commit_create(&commit_id, repo, "HEAD",
-									  signature, signature, 
-									  "UTF-8", "",
-									  head_tree,
-									  2, parents);
-
-
-					git_tree_free(head_tree);
-					git_commit_free(merge_head_commit);
-					git_commit_free(origin_head_commit);
-					git_annotated_commit_free(fetch_head_commit);
-					//git_reference_free(fetch_head_ref);
+					git_reference_free(merge_result_head);
+					git_reference_free(master_head_ref);
 				}
+				git_annotated_commit_free(fetch_head_commit);
+				git_reference_free(fetch_head_ref);
 
 				// NOTE: This conflict resolution should be alright.
 				{
