@@ -2,6 +2,8 @@
 #include <WinCred.h>
 #include <strsafe.h>
 
+#include "git_common.hpp"
+
 #include "git2.h"
 
 #include <string>
@@ -16,6 +18,7 @@
 }
 
 
+#ifndef __YS_GIT_COMMON_HPP__
 #define LG_CHCKD(func) \
 {\
 	int error = func;\
@@ -25,6 +28,7 @@
 		assert(!"Git raised an error, please check the logs");\
 	}\
 }
+#endif
 
 
 // {9CA77349-841E-411B-BCF6-C1CAA357A491}
@@ -91,6 +95,42 @@ int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 {
 
+	{
+		std::string		central_path = test_env_root + test_main_drive;
+		std::string		satellite_path = test_env_root + test_drive_A;
+
+		ys::git::core::initialize();
+
+
+		git_repository*	central;
+		if (ys::git::core::repository_exists(central_path))
+			central = ys::git::core::repository_open(central_path);
+		else
+			central = ys::git::core::central_init(central_path);
+
+		if (ys::git::core::central_needs_commit(central))
+			ys::git::core::central_commit(central);
+
+		git_repository_free(central);
+
+		if (ys::git::core::repository_exists(satellite_path))
+		{
+			ys::git::core::ys_satellite	satellite = 
+				ys::git::core::satellite_open(satellite_path);
+
+			// NOTE: We still need to check if fast-forward is possible.
+			ys::git::core::satellite_fast_forward(satellite);
+
+			ys::git::core::satellite_free(satellite);
+		}
+		else
+			ys::git::core::satellite_clone(satellite_path, central_path);
+
+
+		ys::git::core::shutdown();
+	}
+
+	if (0)
 	{
 		git_libgit2_init();
 		
@@ -194,7 +234,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			}
 			
 			git_repository_free(repo);
-		}
+		} // MAIN REPOSITORY CREATION
 
 		// SATELLITE DRIVES CLONE
 		{
