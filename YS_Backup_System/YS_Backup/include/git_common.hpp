@@ -40,7 +40,7 @@ git_repository*		central_init(const std::string& path);
 bool				central_needs_commit(git_repository* central);
 void				central_commit(git_repository* central);
 
-void				satellite_clone(const std::string& path, 
+ys_satellite		satellite_clone(const std::string& path, 
 									const std::string& central);
 // Opens a satellite repository, finds the origin remote, and fetches.
 ys_satellite		satellite_open(const std::string& path);
@@ -52,9 +52,9 @@ bool				repository_exists(const std::string& path);
 git_commit*			repository_head_commit(git_repository* repo);
 
 
-git_signature*		g_ys_signature;
-const char			c_commit_author[] = "YS_Backup";
-const char			c_commit_email[] = "YS_Backup@notanemail.ys";
+static git_signature*		g_ys_signature;
+static const char			c_commit_author[] = "YS_Backup";
+static const char			c_commit_email[] = "YS_Backup@notanemail.ys";
 
 
 // FUTURE CANDIDATES:

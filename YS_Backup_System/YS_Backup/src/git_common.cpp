@@ -108,12 +108,18 @@ central_commit(git_repository* central)
 }
 
 
-void
+ys_satellite
 satellite_clone(const std::string& path,
 				const std::string& central)
 {
+	ys_satellite	satellite;
+
 	LG_CHCKD(
-		git_clone(nullptr, central.c_str(), path.c_str(), nullptr));
+		git_clone(&satellite.repo, central.c_str(), path.c_str(), nullptr));
+
+	git_remote_lookup(&satellite.origin, satellite.repo, "origin");
+
+	return satellite;
 }
 
 

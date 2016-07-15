@@ -98,35 +98,35 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 	{
 		std::string		central_path = test_env_root + test_main_drive;
 		std::string		satellite_path = test_env_root + test_drive_A;
-
+	
 		ys::git::core::initialize();
-
-
+	
+	
 		git_repository*	central;
 		if (ys::git::core::repository_exists(central_path))
 			central = ys::git::core::repository_open(central_path);
 		else
 			central = ys::git::core::central_init(central_path);
-
+	
 		if (ys::git::core::central_needs_commit(central))
 			ys::git::core::central_commit(central);
-
+	
 		git_repository_free(central);
-
+	
 		if (ys::git::core::repository_exists(satellite_path))
 		{
 			ys::git::core::ys_satellite	satellite = 
 				ys::git::core::satellite_open(satellite_path);
-
+	
 			// NOTE: We still need to check if fast-forward is possible.
 			ys::git::core::satellite_fast_forward(satellite);
-
+	
 			ys::git::core::satellite_free(satellite);
 		}
 		else
 			ys::git::core::satellite_clone(satellite_path, central_path);
-
-
+	
+	
 		ys::git::core::shutdown();
 	}
 
