@@ -100,7 +100,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 		std::string		satellite_path = test_env_root + test_drive_A;
 	
 		ys::git::core::initialize();
-	
+
 	
 		git_repository*	central;
 		if (ys::git::core::repository_exists(central_path))
@@ -118,6 +118,55 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			ys::git::core::ys_satellite	satellite = 
 				ys::git::core::satellite_open(satellite_path);
 	
+			if (ys::git::core::central_needs_commit(satellite.repo))
+			{
+				// Commit our satellite modifications.
+				ys::git::core::central_commit(satellite.repo);
+
+				// NOTE: git_remote_push doesn't work locally, UNLESS the remote is bare.
+				//		 In order to acutally push data from a satellite to central, we have
+				//		 to turn our remote into a bare repo, do the push, and turn it back.
+				//		 Doing so doesn't seem to clear our central working dir, 
+				//		 but it might, I don't know man.
+				const char*		remote_url = git_remote_url(satellite.origin);
+				git_repository*	remote_repo;
+
+				git_repository_open(&remote_repo, remote_url);
+				// NOTE: The following function is not declared in libgit header
+				//		 despite being documented, so remember to add it to repository.h.
+				git_repository_set_bare(remote_repo);
+
+
+				// Push to our remote.
+				git_strarray	push_refspecs = { 0 };
+				git_remote_get_push_refspecs(&push_refspecs, satellite.origin);
+				git_push_options	push_options = GIT_PUSH_OPTIONS_INIT;
+				push_options.pb_parallelism = 0;
+
+				LG_CHCKD(
+				git_remote_push(satellite.origin, &push_refspecs, &push_options));
+
+
+				// Turn remote back into a normal repository.
+				LG_CHCKD(
+				git_repository_set_workdir(remote_repo, remote_url, 0));
+
+				// NOTE: libgit should set core.bare value to false, but it doesn't.
+				git_config*		remote_config;
+				git_repository_config(&remote_config, remote_repo);
+				git_config_set_bool(remote_config, "core.bare", 0);
+				git_config_free(remote_config);
+			
+				git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
+				checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
+				git_checkout_head(remote_repo, &checkout_options);
+
+				git_repository_free(remote_repo);
+
+				// Fetching our central modified state is necessary.
+				ys::git::core::satellite_fetch(satellite);
+			}
+
 			// NOTE: We still need to check if fast-forward is possible.
 			ys::git::core::satellite_fast_forward(satellite);
 	

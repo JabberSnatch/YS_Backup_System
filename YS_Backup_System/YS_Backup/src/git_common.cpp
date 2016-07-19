@@ -61,13 +61,15 @@ central_needs_commit(git_repository* central)
 	status_options.flags =
 		GIT_STATUS_OPT_INCLUDE_UNTRACKED |
 		GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
-
-	git_status_list_new(&statuses, central, &status_options);
+	
+	LG_CHCKD(
+	git_status_list_new(&statuses, central, &status_options));
 	size_t status_count = git_status_list_entrycount(statuses);
 
 	needs_commit = (status_count > 0);
 
 	git_status_list_free(statuses);
+
 
 	return needs_commit;
 }
@@ -117,6 +119,8 @@ satellite_clone(const std::string& path,
 	LG_CHCKD(
 		git_clone(&satellite.repo, central.c_str(), path.c_str(), nullptr));
 
+	git_remote_add_push(satellite.repo, "origin", 
+						"refs/heads/master:refs/heads/master");
 	git_remote_lookup(&satellite.origin, satellite.repo, "origin");
 
 	return satellite;
@@ -132,10 +136,17 @@ satellite_open(const std::string& path)
 	// NOTE: Perhaps we could also check remote lookup.
 	git_remote_lookup(&satellite.origin, satellite.repo, "origin");
 
-	git_fetch_options	fetch_options = GIT_FETCH_OPTIONS_INIT;
-	git_remote_fetch(satellite.origin, nullptr, &fetch_options, "fetch");
+	satellite_fetch(satellite);
 
 	return satellite;
+}
+
+
+void
+satellite_fetch(ys_satellite& satellite)
+{
+	git_fetch_options	fetch_options = GIT_FETCH_OPTIONS_INIT;
+	git_remote_fetch(satellite.origin, nullptr, &fetch_options, "fetch");
 }
 
 
@@ -221,6 +232,7 @@ always_add(const char* path,
 		   const char* matched_pathspec,
 		   void* payload)
 {
+	// NOTE: return 0 to add, < 0 to abort, and > 0 to skip
 	return 0;
 }
 

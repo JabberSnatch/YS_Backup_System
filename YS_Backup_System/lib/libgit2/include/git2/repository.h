@@ -401,6 +401,8 @@ GIT_EXTERN(int) git_repository_set_workdir(
  */
 GIT_EXTERN(int) git_repository_is_bare(git_repository *repo);
 
+GIT_EXTERN(int) git_repository_set_bare(git_repository* repo);
+
 /**
  * Get the configuration file for this repository.
  *
