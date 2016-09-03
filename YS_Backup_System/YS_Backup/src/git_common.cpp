@@ -51,65 +51,6 @@ central_init(const std::string& path)
 }
 
 
-bool
-central_needs_commit(git_repository* central)
-{
-	bool	needs_commit = false;
-
-	git_status_list*	statuses = nullptr;
-	git_status_options	status_options = GIT_STATUS_OPTIONS_INIT;
-	status_options.flags =
-		GIT_STATUS_OPT_INCLUDE_UNTRACKED |
-		GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
-	
-	LG_CHCKD(
-	git_status_list_new(&statuses, central, &status_options));
-	size_t status_count = git_status_list_entrycount(statuses);
-
-	needs_commit = (status_count > 0);
-
-	git_status_list_free(statuses);
-
-
-	return needs_commit;
-}
-
-
-void
-central_commit(git_repository* central)
-{
-	git_commit*			head_commit = repository_head_commit(central);
-
-	const git_commit*	parents[] = { head_commit };
-	char*				paths[] = { "." };
-	git_strarray		arr = { paths, 1 };
-	git_index*			index;
-	git_oid				commit_id, tree_id;
-	git_tree*			tree;
-
-	git_repository_index(&index, central);
-
-	LG_CHCKD(
-		git_index_add_all(index, &arr,
-						  GIT_INDEX_ADD_DEFAULT,
-						  ys::git::callback::always_add, nullptr));
-
-	git_index_write(index);
-	git_index_write_tree(&tree_id, index);
-	git_tree_lookup(&tree, central, &tree_id);
-
-	LG_CHCKD(
-		git_commit_create(&commit_id, central, "HEAD",
-						  g_ys_signature, g_ys_signature,
-						  "UTF-8", "",
-						  tree, 1, parents));
-
-	git_tree_free(tree);
-	git_index_free(index);
-	git_commit_free(head_commit);
-}
-
-
 ys_satellite
 satellite_clone(const std::string& path,
 				const std::string& central)
@@ -159,7 +100,7 @@ satellite_free(ys_satellite& satellite)
 
 
 void
-satellite_fast_forward(ys_satellite& satellite)
+satellite_checkout(ys_satellite& satellite)
 {
 	git_reference*			merge_result_head;
 	git_reference*			master_head_ref;
@@ -175,7 +116,7 @@ satellite_fast_forward(ys_satellite& satellite)
 
 
 	git_reference_set_target(&merge_result_head, master_head_ref,
-							 &fetch_head_oid, "fast-forward merge");
+							 &fetch_head_oid, "fast-forward checkout");
 
 
 	git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
@@ -185,6 +126,51 @@ satellite_fast_forward(ys_satellite& satellite)
 
 	git_reference_free(merge_result_head);
 	git_reference_free(master_head_ref);
+}
+
+
+void
+satellite_push(ys_satellite& satellite)
+{
+	// NOTE: git_remote_push doesn't work locally, UNLESS the remote is bare.
+	//		 In order to acutally push data from a satellite to central, we have
+	//		 to turn our remote into a bare repo, do the push, and turn it back.
+	//		 Doing so doesn't seem to clear our central working dir, 
+	//		 but it might, I don't know man.
+	const char*		remote_url = git_remote_url(satellite.origin);
+	git_repository*	remote_repo;
+
+	git_repository_open(&remote_repo, remote_url);
+	// NOTE: The following function is not declared in libgit header
+	//		 despite being documented, so remember to add it to repository.h.
+	git_repository_set_bare(remote_repo);
+
+
+	// Push to our remote.
+	git_strarray	push_refspecs = { 0 };
+	git_remote_get_push_refspecs(&push_refspecs, satellite.origin);
+	git_push_options	push_options = GIT_PUSH_OPTIONS_INIT;
+	push_options.pb_parallelism = 0;
+
+	LG_CHCKD(
+		git_remote_push(satellite.origin, &push_refspecs, &push_options));
+
+
+	// Turn remote back into a normal repository.
+	LG_CHCKD(
+		git_repository_set_workdir(remote_repo, remote_url, 0));
+
+	// NOTE: libgit should set core.bare value to false, but it doesn't.
+	git_config*		remote_config;
+	git_repository_config(&remote_config, remote_repo);
+	git_config_set_bool(remote_config, "core.bare", 0);
+	git_config_free(remote_config);
+
+	git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
+	checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
+	git_checkout_head(remote_repo, &checkout_options);
+
+	git_repository_free(remote_repo);
 }
 
 
@@ -219,6 +205,64 @@ repository_head_commit(git_repository* repo)
 	git_commit_lookup(&head_commit, repo, &head_id);
 
 	return head_commit;
+}
+
+
+bool
+repository_needs_commit(git_repository* repo)
+{
+	bool	needs_commit = false;
+
+	git_status_list*	statuses = nullptr;
+	git_status_options	status_options = GIT_STATUS_OPTIONS_INIT;
+	status_options.flags =
+		GIT_STATUS_OPT_INCLUDE_UNTRACKED |
+		GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
+
+	LG_CHCKD(
+		git_status_list_new(&statuses, repo, &status_options));
+	size_t status_count = git_status_list_entrycount(statuses);
+
+	needs_commit = (status_count > 0);
+
+	git_status_list_free(statuses);
+
+	return needs_commit;
+}
+
+
+void
+repository_commit(git_repository* repo)
+{
+	git_commit*			head_commit = repository_head_commit(repo);
+
+	const git_commit*	parents[] = { head_commit };
+	char*				paths[] = { "." };
+	git_strarray		arr = { paths, 1 };
+	git_index*			index;
+	git_oid				commit_id, tree_id;
+	git_tree*			tree;
+
+	git_repository_index(&index, repo);
+
+	LG_CHCKD(
+		git_index_add_all(index, &arr,
+						  GIT_INDEX_ADD_DEFAULT,
+						  ys::git::callback::always_add, nullptr));
+
+	git_index_write(index);
+	git_index_write_tree(&tree_id, index);
+	git_tree_lookup(&tree, repo, &tree_id);
+
+	LG_CHCKD(
+		git_commit_create(&commit_id, repo, "HEAD",
+						  g_ys_signature, g_ys_signature,
+						  "UTF-8", "",
+						  tree, 1, parents));
+
+	git_tree_free(tree);
+	git_index_free(index);
+	git_commit_free(head_commit);
 }
 
 

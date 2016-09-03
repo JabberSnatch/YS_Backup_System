@@ -108,8 +108,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 		else
 			central = ys::git::core::central_init(central_path);
 	
-		if (ys::git::core::central_needs_commit(central))
-			ys::git::core::central_commit(central);
+		if (ys::git::core::repository_needs_commit(central))
+			ys::git::core::repository_commit(central);
 	
 		git_repository_free(central);
 	
@@ -118,57 +118,49 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			ys::git::core::ys_satellite	satellite = 
 				ys::git::core::satellite_open(satellite_path);
 	
-			if (ys::git::core::central_needs_commit(satellite.repo))
+			// Commit our satellite modifications.
+			if (ys::git::core::repository_needs_commit(satellite.repo))
+				ys::git::core::repository_commit(satellite.repo);
+
+
+			// Merge analysis on central > satellite
+			git_merge_analysis_t	analysis_out;
+			git_merge_preference_t	preference_out;
+			git_annotated_commit*	remote_head;
+			git_oid					remote_head_id;
+
+			const char*		remote_url = git_remote_url(satellite.origin);
+			git_repository*	remote_repo;
+			git_repository_open(&remote_repo, remote_url);
+
+			git_reference_name_to_id(&remote_head_id, remote_repo,
+										"HEAD");
+			git_annotated_commit_lookup(&remote_head, remote_repo,
+										&remote_head_id);
+
+			const git_annotated_commit* merge_heads[] = { remote_head };
+			git_merge_analysis(&analysis_out, &preference_out,
+								satellite.repo, merge_heads, 1);
+
+			if (analysis_out & GIT_MERGE_ANALYSIS_FASTFORWARD)
 			{
-				// Commit our satellite modifications.
-				ys::git::core::central_commit(satellite.repo);
-
-				// NOTE: git_remote_push doesn't work locally, UNLESS the remote is bare.
-				//		 In order to acutally push data from a satellite to central, we have
-				//		 to turn our remote into a bare repo, do the push, and turn it back.
-				//		 Doing so doesn't seem to clear our central working dir, 
-				//		 but it might, I don't know man.
-				const char*		remote_url = git_remote_url(satellite.origin);
-				git_repository*	remote_repo;
-
-				git_repository_open(&remote_repo, remote_url);
-				// NOTE: The following function is not declared in libgit header
-				//		 despite being documented, so remember to add it to repository.h.
-				git_repository_set_bare(remote_repo);
+				ys::git::core::satellite_checkout(satellite);
+			}
+			else if (analysis_out & GIT_MERGE_ANALYSIS_NORMAL)
+			{
+			}
 
 
-				// Push to our remote.
-				git_strarray	push_refspecs = { 0 };
-				git_remote_get_push_refspecs(&push_refspecs, satellite.origin);
-				git_push_options	push_options = GIT_PUSH_OPTIONS_INIT;
-				push_options.pb_parallelism = 0;
-
-				LG_CHCKD(
-				git_remote_push(satellite.origin, &push_refspecs, &push_options));
-
-
-				// Turn remote back into a normal repository.
-				LG_CHCKD(
-				git_repository_set_workdir(remote_repo, remote_url, 0));
-
-				// NOTE: libgit should set core.bare value to false, but it doesn't.
-				git_config*		remote_config;
-				git_repository_config(&remote_config, remote_repo);
-				git_config_set_bool(remote_config, "core.bare", 0);
-				git_config_free(remote_config);
-			
-				git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
-				checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
-				git_checkout_head(remote_repo, &checkout_options);
-
-				git_repository_free(remote_repo);
+			if (0)
+			{
+				ys::git::core::satellite_push(satellite);
 
 				// Fetching our central modified state is necessary.
 				ys::git::core::satellite_fetch(satellite);
 			}
 
 			// NOTE: We still need to check if fast-forward is possible.
-			ys::git::core::satellite_fast_forward(satellite);
+			ys::git::core::satellite_checkout(satellite);
 	
 			ys::git::core::satellite_free(satellite);
 		}

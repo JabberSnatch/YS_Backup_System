@@ -37,9 +37,6 @@ void	shutdown();
 // NOTE: As there should always be a single central available at all time,
 //		 wouldn't it be a good idea to make it a global ?
 git_repository*		central_init(const std::string& path);
-// TODO: both needs_commit and commit are used by central and satellite the same way.
-bool				central_needs_commit(git_repository* central);
-void				central_commit(git_repository* central);
 
 ys_satellite		satellite_clone(const std::string& path, 
 									const std::string& central);
@@ -47,11 +44,14 @@ ys_satellite		satellite_clone(const std::string& path,
 ys_satellite		satellite_open(const std::string& path);
 void				satellite_fetch(ys_satellite& satellite);
 void				satellite_free(ys_satellite& satellite);
-void				satellite_fast_forward(ys_satellite& satellite);
+void				satellite_checkout(ys_satellite& satellite);
+void				satellite_push(ys_satellite& satellite);
 
 git_repository*		repository_open(const std::string& path);
 bool				repository_exists(const std::string& path);
 git_commit*			repository_head_commit(git_repository* repo);
+bool				repository_needs_commit(git_repository* repo);
+void				repository_commit(git_repository* repo);
 
 
 static git_signature*		g_ys_signature;
