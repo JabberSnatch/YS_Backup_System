@@ -279,6 +279,13 @@ repository_commit(git_repository* repo)
 }
 
 
+void
+repository_checkout(git_repository* repo)
+{
+
+}
+
+
 } // namespace core
 
 namespace callback {

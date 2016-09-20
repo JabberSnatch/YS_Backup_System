@@ -49,12 +49,13 @@ void				satellite_checkout(ys_satellite& satellite);
 // Broadcasts the satellite's commits to its central.
 void				satellite_push(ys_satellite& satellite);
 
-git_repository*		repository_open(const std::string& path);
-bool				repository_exists(const std::string& path);
-git_commit*			repository_head_commit(git_repository* repo);
+git_repository*			repository_open(const std::string& path);
+bool					repository_exists(const std::string& path);
+git_commit*				repository_head_commit(git_repository* repo);
 git_annotated_commit*	repository_ann_head_commit(git_repository* repo);
-bool				repository_needs_commit(git_repository* repo);
-void				repository_commit(git_repository* repo);
+bool					repository_needs_commit(git_repository* repo);
+void					repository_commit(git_repository* repo);
+void					repository_checkout(git_repository* repo);
 
 
 static git_signature*		g_ys_signature;
@@ -65,6 +66,9 @@ static const char			c_commit_email[] = "YS_Backup@notanemail.ys";
 // FUTURE CANDIDATES:
 bool				satellite_is_fast_forward(ys_satellite& satellite);
 void				satellite_merge_with_origin(ys_satellite& satellite);
+
+git_commit*			repository_get_commit(git_repository* repo,
+										  const std::string&);
 
 } // namespace core
 

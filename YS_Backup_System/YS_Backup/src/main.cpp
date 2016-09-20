@@ -173,17 +173,46 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 					ys::git::core::repository_head_commit(satellite.repo);
 				git_commit*			remote_commit =
 					ys::git::core::repository_head_commit(remote_repo);
-				git_merge_options	merge_options = GIT_MERGE_OPTIONS_INIT;
+				git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
+				git_checkout_options	checkout_options = 
+					GIT_CHECKOUT_OPTIONS_INIT;
 
-				LG_CHCKD(
-					git_merge_commits(&merge_index, satellite.repo,
-									  satellite_commit, remote_commit,
-									  &merge_options));
+				//LG_CHCKD(
+				//	git_merge_commits(&merge_index, satellite.repo,
+				//					  satellite_commit, remote_commit,
+				//					  &merge_options));
+
+			
+				// git_merge is the key. maybe ?
+				const git_annotated_commit* their_heads[] = { remote_head };
+				git_merge(satellite.repo, their_heads, 1, 
+						  &merge_options, &checkout_options);
+				git_repository_index(&merge_index, satellite.repo);
+
 
 				{
 					git_index_conflict_iterator*	conflict_ite;
 					// TODO: First iteration on conflict resolution and test
+					git_index_conflict_iterator_new(&conflict_ite, merge_index);
+
+					const git_index_entry*	ancestor;
+					const git_index_entry*	ours;
+					const git_index_entry*	theirs;
+					while (git_index_conflict_next(&ancestor, &ours, &theirs,
+												   conflict_ite) != GIT_ITEROVER)
+					{
+						if (ours->mtime.seconds > theirs->mtime.seconds)
+							git_index_entry_stage(ours);
+						else
+							git_index_entry_stage(theirs);
+					}
+
+					// STAGE
+					git_index_write(merge_index);
+					// FREE
 				}
+
+				git_repository_state_cleanup(satellite.repo);
 
 				// NOTE: This conflict resolution should be alright.
 #if 0
