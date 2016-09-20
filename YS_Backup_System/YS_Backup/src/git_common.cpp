@@ -208,6 +208,19 @@ repository_head_commit(git_repository* repo)
 }
 
 
+git_annotated_commit*
+repository_ann_head_commit(git_repository* repo)
+{
+	git_annotated_commit*	head_commit;
+	git_oid					head_id;
+
+	git_reference_name_to_id(&head_id, repo, "HEAD");
+	git_annotated_commit_lookup(&head_commit, repo, &head_id);
+
+	return head_commit;
+}
+
+
 bool
 repository_needs_commit(git_repository* repo)
 {

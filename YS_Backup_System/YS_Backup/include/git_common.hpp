@@ -44,12 +44,15 @@ ys_satellite		satellite_clone(const std::string& path,
 ys_satellite		satellite_open(const std::string& path);
 void				satellite_fetch(ys_satellite& satellite);
 void				satellite_free(ys_satellite& satellite);
+// Updates the satellite working directory to the central state.
 void				satellite_checkout(ys_satellite& satellite);
+// Broadcasts the satellite's commits to its central.
 void				satellite_push(ys_satellite& satellite);
 
 git_repository*		repository_open(const std::string& path);
 bool				repository_exists(const std::string& path);
 git_commit*			repository_head_commit(git_repository* repo);
+git_annotated_commit*	repository_ann_head_commit(git_repository* repo);
 bool				repository_needs_commit(git_repository* repo);
 void				repository_commit(git_repository* repo);
 

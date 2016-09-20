@@ -126,28 +126,104 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			// Merge analysis on central > satellite
 			git_merge_analysis_t	analysis_out;
 			git_merge_preference_t	preference_out;
-			git_annotated_commit*	remote_head;
-			git_oid					remote_head_id;
-
+			
 			const char*		remote_url = git_remote_url(satellite.origin);
 			git_repository*	remote_repo;
 			git_repository_open(&remote_repo, remote_url);
+			
+			git_annotated_commit*	remote_head = 
+				ys::git::core::repository_ann_head_commit(remote_repo);
 
-			git_reference_name_to_id(&remote_head_id, remote_repo,
-										"HEAD");
-			git_annotated_commit_lookup(&remote_head, remote_repo,
-										&remote_head_id);
+			git_annotated_commit*	satellite_head =
+				ys::git::core::repository_ann_head_commit(satellite.repo);
 
-			const git_annotated_commit* merge_heads[] = { remote_head };
-			git_merge_analysis(&analysis_out, &preference_out,
-								satellite.repo, merge_heads, 1);
+			{
+				const git_annotated_commit* merge_heads[] = { remote_head };
+				git_merge_analysis(&analysis_out, &preference_out,
+									satellite.repo, merge_heads, 1);
+			}
 
+// NOTE: Cases :
+			// 0_ Central, Satellite
+			// 1_ *Central, Satellite
+			// 2_ Central, *Satellite
+			// 3_ *Central, *Satellite
+			// 4_ *Central, *Satellite /!\
+
+// NOTE: Procedures (Assuming both repos have already been commited) :
+			// [ ] 0_ Do nothing
+			// [X] 1_ Checkout Satellite
+			// [X] 2_ Push Satellite
+			// [ ] 3_ Merge
+			// [ ] 4_ Merge, resolve conflicts
+
+			// Case 1
 			if (analysis_out & GIT_MERGE_ANALYSIS_FASTFORWARD)
 			{
 				ys::git::core::satellite_checkout(satellite);
 			}
+			// Case 3 and 4
 			else if (analysis_out & GIT_MERGE_ANALYSIS_NORMAL)
 			{
+				int i = 0;
+				i += 1;
+
+				git_index*			merge_index;
+				git_commit*			satellite_commit = 
+					ys::git::core::repository_head_commit(satellite.repo);
+				git_commit*			remote_commit =
+					ys::git::core::repository_head_commit(remote_repo);
+				git_merge_options	merge_options = GIT_MERGE_OPTIONS_INIT;
+
+				LG_CHCKD(
+					git_merge_commits(&merge_index, satellite.repo,
+									  satellite_commit, remote_commit,
+									  &merge_options));
+
+				{
+					git_index_conflict_iterator*	conflict_ite;
+					// TODO: First iteration on conflict resolution and test
+				}
+
+				// NOTE: This conflict resolution should be alright.
+#if 0
+				{
+					git_index*						local_index;
+					git_index_conflict_iterator*	conflict_ite;
+					git_repository_index(&local_index, repo);
+					git_index_conflict_iterator_new(&conflict_ite, local_index);
+
+					const git_index_entry*	ancestor;
+					const git_index_entry*	ours;
+					const git_index_entry*	theirs;
+					while (git_index_conflict_next(&ancestor, &ours, &theirs,
+												   conflict_ite) != GIT_ITEROVER)
+					{
+						if (ours->mtime.seconds > theirs->mtime.seconds)
+							git_index_entry_stage(ours);
+						else
+							git_index_entry_stage(theirs);
+					}
+
+					git_index_conflict_iterator_free(conflict_ite);
+					git_index_free(local_index);
+					git_repository_state_cleanup(repo);
+				}
+#endif
+			}
+			// Case 0 and 2
+			else if (analysis_out & GIT_MERGE_ANALYSIS_UP_TO_DATE)
+			{
+				// NOTE: Procedure 0 is not implemented yet, Case 0 and 2 share
+				//		 the same procedure.
+
+				ys::git::core::satellite_push(satellite);
+				//ys::git::core::satellite_fetch(satellite);
+			}
+			// Default
+			else if (analysis_out & GIT_MERGE_ANALYSIS_NONE)
+			{
+				ys::git::core::satellite_checkout(satellite);
 			}
 
 
@@ -160,7 +236,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			}
 
 			// NOTE: We still need to check if fast-forward is possible.
-			ys::git::core::satellite_checkout(satellite);
+			//ys::git::core::satellite_checkout(satellite);
 	
 			ys::git::core::satellite_free(satellite);
 		}
