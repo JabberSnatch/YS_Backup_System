@@ -216,9 +216,18 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 												   conflict_ite) != GIT_ITEROVER)
 					{
 						if (ours->mtime.seconds > theirs->mtime.seconds)
-							git_index_entry_stage(ours);
+						{
+						}
 						else
-							git_index_entry_stage(theirs);
+						{
+						}
+
+						// NOTE: Conflict resolution is not really handled by
+						//		 libgit2. So we have to do it ourselves, by 
+						//		 openning each file and rewrite it using only
+						//		 relevant data.
+
+						git_index_conflict_remove(merge_index, ours->path);
 					}
 
 					// STAGE
@@ -238,11 +247,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				git_signature*		signature;
 				git_signature_now(&signature, ys::git::core::c_commit_author,
 								  ys::git::core::c_commit_email);
-				
-				git_oid				parent_oid;
-				git_commit			*parent_ours, *parent_theirs;
-				git_reference_name_to_id(&parent_oid, satellite.repo, "HEAD");
-				git_commit_lookup(&parent_ours, satellite.repo, &parent_oid);
 
 				const git_commit*	merge_parents[] = { 
 					satellite_commit, fetch_commit
@@ -259,6 +263,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 									  "UTF-8", "",
 									  merge_tree, 2, merge_parents));
 
+				git_signature_free(signature);
 				// PUSH
 
 				git_repository_state_cleanup(satellite.repo);
