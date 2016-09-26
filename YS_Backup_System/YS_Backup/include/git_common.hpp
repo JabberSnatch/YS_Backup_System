@@ -79,6 +79,7 @@ int always_add(const char* path,
 			   const char* matched_pathspec, 
 			   void* payload);
 
+// NOTE: payload is expected to be a pointer to git_oid
 int find_merge_branch(const char* ref_name,
 					  const char* remote_url,
 					  const git_oid* oid,

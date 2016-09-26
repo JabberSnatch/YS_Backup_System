@@ -177,14 +177,28 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				git_checkout_options	checkout_options = 
 					GIT_CHECKOUT_OPTIONS_INIT;
 
+				merge_options.file_flags = GIT_MERGE_FILE_STYLE_MERGE;
+				checkout_options.checkout_strategy = GIT_CHECKOUT_SAFE;
+
 				//LG_CHCKD(
 				//	git_merge_commits(&merge_index, satellite.repo,
 				//					  satellite_commit, remote_commit,
 				//					  &merge_options));
 
 			
-				// git_merge is the key. maybe ?
-				const git_annotated_commit* their_heads[] = { remote_head };
+				git_annotated_commit*	fetch_head;
+				git_oid					fetch_head_oid;
+				git_reference_name_to_id(&fetch_head_oid, satellite.repo, "FETCH_HEAD");
+				git_annotated_commit_lookup(&fetch_head, satellite.repo, &fetch_head_oid);
+				
+				git_repository_fetchhead_foreach(
+					satellite.repo,
+					ys::git::callback::find_merge_branch,
+					&fetch_head_oid);
+
+				const git_annotated_commit* their_heads[] = { 
+					fetch_head
+				};        
 				git_merge(satellite.repo, their_heads, 1, 
 						  &merge_options, &checkout_options);
 				git_repository_index(&merge_index, satellite.repo);

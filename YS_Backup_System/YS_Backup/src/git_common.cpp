@@ -301,6 +301,24 @@ always_add(const char* path,
 }
 
 
+int
+find_merge_branch(const char* ref_name,
+				  const char* remote_url,
+				  const git_oid* oid,
+				  unsigned int is_merge,
+				  void* payload)
+{
+	// NOTE: Return non-zero to stop
+	if (is_merge)
+	{
+		git_oid_cpy((git_oid*)payload, oid);
+		return 1;
+	}
+	else
+		return 0;
+}
+
+
 } // namespace callback
 
 } // namespace git
