@@ -224,9 +224,45 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 					// STAGE
 					git_index_write(merge_index);
 					// FREE
+					git_index_conflict_iterator_free(conflict_ite);
 				}
 
+				// COMMIT
+				git_oid				merge_commit_oid, merge_tree_oid;
+				git_tree*			merge_tree;
+
+				git_commit*			fetch_commit;
+				git_commit_lookup(&fetch_commit, satellite.repo, 
+								  &fetch_head_oid);
+
+				git_signature*		signature;
+				git_signature_now(&signature, ys::git::core::c_commit_author,
+								  ys::git::core::c_commit_email);
+				
+				git_oid				parent_oid;
+				git_commit			*parent_ours, *parent_theirs;
+				git_reference_name_to_id(&parent_oid, satellite.repo, "HEAD");
+				git_commit_lookup(&parent_ours, satellite.repo, &parent_oid);
+
+				const git_commit*	merge_parents[] = { 
+					satellite_commit, fetch_commit
+				};
+
+
+				git_index_write_tree(&merge_tree_oid, merge_index);
+				git_tree_lookup(&merge_tree, satellite.repo, &merge_tree_oid);
+
+ 				LG_CHCKD(
+					git_commit_create(&merge_commit_oid, satellite.repo, "HEAD",
+									  signature, 
+									  signature,
+									  "UTF-8", "",
+									  merge_tree, 2, merge_parents));
+
+				// PUSH
+
 				git_repository_state_cleanup(satellite.repo);
+				ys::git::core::satellite_push(satellite);
 
 				// NOTE: This conflict resolution should be alright.
 #if 0
