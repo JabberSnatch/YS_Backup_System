@@ -320,6 +320,5 @@ find_merge_branch(const char* ref_name,
 
 
 } // namespace callback
-
 } // namespace git
 } // namespace ys

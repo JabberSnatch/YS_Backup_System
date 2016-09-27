@@ -166,11 +166,13 @@ if %errorlevel% leq 1 exit 0 else exit %errorlevel%</Command>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\git_common.cpp" />
+    <ClCompile Include="src\git_file.cpp" />
     <ClCompile Include="src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BackupService.hpp" />
     <ClInclude Include="include\git_common.hpp" />
+    <ClInclude Include="include\git_file.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

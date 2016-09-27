@@ -21,7 +21,6 @@
 
 namespace ys {
 namespace git {
-
 namespace core {
 
 struct ys_satellite
@@ -87,7 +86,6 @@ int find_merge_branch(const char* ref_name,
 					  void* payload);
 
 } // namespace callback
-
 } // namespace git
 } // namespace ys
 

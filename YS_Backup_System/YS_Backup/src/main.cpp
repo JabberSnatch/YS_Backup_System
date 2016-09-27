@@ -3,6 +3,7 @@
 #include <strsafe.h>
 
 #include "git_common.hpp"
+#include "git_file.hpp"
 
 #include "git2.h"
 
@@ -184,7 +185,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				//	git_merge_commits(&merge_index, satellite.repo,
 				//					  satellite_commit, remote_commit,
 				//					  &merge_options));
-
 			
 				git_annotated_commit*	fetch_head;
 				git_oid					fetch_head_oid;
@@ -217,9 +217,19 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 					{
 						if (ours->mtime.seconds > theirs->mtime.seconds)
 						{
+							//ys::git::file::file_resolve_conflicts(
+							//	satellite_path + ancestor->path, 
+							//	ys::git::file::kStyleOurs
+							//);
+							git_index_add(merge_index, ours);
 						}
 						else
 						{
+							//ys::git::file::file_resolve_conflicts(
+							//	satellite_path + ancestor->path,
+							//	ys::git::file::kStyleTheirs
+							//);
+							git_index_add(merge_index, theirs);
 						}
 
 						// NOTE: Conflict resolution is not really handled by
@@ -228,6 +238,7 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 						//		 relevant data.
 
 						git_index_conflict_remove(merge_index, ours->path);
+						git_index_write(merge_index);
 					}
 
 					// STAGE

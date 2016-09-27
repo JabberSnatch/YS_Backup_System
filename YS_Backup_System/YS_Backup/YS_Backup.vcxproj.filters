@@ -21,12 +21,18 @@
     <ClCompile Include="src\git_common.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\git_file.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BackupService.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\git_common.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\git_file.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
