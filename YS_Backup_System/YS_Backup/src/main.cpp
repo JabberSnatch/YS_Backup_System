@@ -8,6 +8,7 @@
 #include "git2.h"
 
 #include <string>
+#include <vector>
 #include <iostream>
 #include <assert.h>
 
@@ -209,36 +210,63 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 					// TODO: First iteration on conflict resolution and test
 					git_index_conflict_iterator_new(&conflict_ite, merge_index);
 
+					std::vector<std::string>	files;
+
 					const git_index_entry*	ancestor;
 					const git_index_entry*	ours;
 					const git_index_entry*	theirs;
 					while (git_index_conflict_next(&ancestor, &ours, &theirs,
 												   conflict_ite) != GIT_ITEROVER)
 					{
+						std::string		full_path =
+							satellite_path + ancestor->path;
+						ys::git::file::ResolutionStyle	preference = 
+							ys::git::file::kStyleDefault;
+						
+						files.emplace_back(full_path);
+
+
 						if (ours->mtime.seconds > theirs->mtime.seconds)
 						{
-							//ys::git::file::file_resolve_conflicts(
-							//	satellite_path + ancestor->path, 
-							//	ys::git::file::kStyleOurs
-							//);
-							git_index_add(merge_index, ours);
+							preference = ys::git::file::kStyleOurs;
+							ys::git::file::file_resolve_conflicts(full_path,
+																  preference);
+							git_index_add_bypath(merge_index, ours->path);
+							//git_index_add(merge_index, ours);
 						}
 						else
 						{
-							//ys::git::file::file_resolve_conflicts(
-							//	satellite_path + ancestor->path,
-							//	ys::git::file::kStyleTheirs
-							//);
-							git_index_add(merge_index, theirs);
+							preference = ys::git::file::kStyleTheirs;
+							ys::git::file::file_resolve_conflicts(full_path,
+																  preference);
+							git_index_add_bypath(merge_index, theirs->path);
+							//git_index_add(merge_index, theirs);
 						}
+
+						git_index_write(merge_index);
 
 						// NOTE: Conflict resolution is not really handled by
 						//		 libgit2. So we have to do it ourselves, by 
 						//		 openning each file and rewrite it using only
 						//		 relevant data.
 
-						git_index_conflict_remove(merge_index, ours->path);
-						git_index_write(merge_index);
+						//git_index_conflict_remove(merge_index, ours->path);
+					}
+
+					for (std::vector<std::string>::iterator it = files.begin();
+						 it != files.end(); ++it)
+					{
+						//LG_CHCKD(
+						//git_index_conflict_remove(merge_index, it->c_str()));
+						//git_index_write(merge_index);
+
+						git_status_t	status;
+						git_status_file((unsigned int*)&status, satellite.repo,
+										it->c_str());
+						if (status & GIT_STATUS_CONFLICTED)
+							std::cout << "alerte" << std::endl;
+						else
+							std::cout << "ok?" << std::endl;
 					}
 
 					// STAGE
