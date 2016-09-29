@@ -225,22 +225,54 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 						
 						files.emplace_back(full_path);
 
+						const git_index_entry*	ancestor_test =
+							git_index_get_bypath(merge_index, ancestor->path,
+												 GIT_INDEX_STAGE_ANCESTOR);
+
+						const git_index_entry*	ours_test =
+							git_index_get_bypath(merge_index, ancestor->path,
+												 GIT_INDEX_STAGE_OURS);
+
+						const git_index_entry*	theirs_test =
+							git_index_get_bypath(merge_index, ancestor->path,
+												 GIT_INDEX_STAGE_THEIRS);
+
+						const git_index_entry*	other_test =
+							git_index_get_byindex(merge_index, 0);
+
+						git_index_entry		new_entry;
 
 						if (ours->mtime.seconds > theirs->mtime.seconds)
 						{
 							preference = ys::git::file::kStyleOurs;
-							ys::git::file::file_resolve_conflicts(full_path,
-																  preference);
-							git_index_add_bypath(merge_index, ours->path);
+							//ys::git::file::file_resolve_conflicts(full_path,
+							//									  preference);
+							//git_index_add_bypath(merge_index, ours->path);
 							//git_index_add(merge_index, ours);
+
+							new_entry = *ours;
+							new_entry.flags &= ~GIT_IDXENTRY_CONFLICTED;
+							GIT_IDXENTRY_STAGE_SET(&new_entry, 
+												   GIT_INDEX_STAGE_NORMAL);
+							git_index_conflict_remove(merge_index,
+													  ancestor->path);
+							git_index_add(merge_index, &new_entry);
 						}
 						else
 						{
 							preference = ys::git::file::kStyleTheirs;
-							ys::git::file::file_resolve_conflicts(full_path,
-																  preference);
-							git_index_add_bypath(merge_index, theirs->path);
+							//ys::git::file::file_resolve_conflicts(full_path,
+							//									  preference);
+							//git_index_add_bypath(merge_index, theirs->path);
 							//git_index_add(merge_index, theirs);
+
+							new_entry = *theirs;
+							new_entry.flags &= ~GIT_IDXENTRY_CONFLICTED;
+							GIT_IDXENTRY_STAGE_SET(&new_entry,
+												   GIT_INDEX_STAGE_NORMAL);
+							git_index_conflict_remove(merge_index,
+													  ancestor->path);
+							git_index_add(merge_index, &new_entry);
 						}
 
 						git_index_write(merge_index);
