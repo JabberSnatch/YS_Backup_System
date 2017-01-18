@@ -4,6 +4,7 @@
 
 #include "git_common.hpp"
 #include "git_file.hpp"
+#include "win_file.hpp"
 
 #include "git2.h"
 
@@ -96,11 +97,10 @@ main(int, char**)
 int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 {
-
 	{
 		std::string		central_path = test_env_root + test_main_drive;
 		std::string		satellite_path = test_env_root + test_drive_A;
-	
+
 		ys::git::core::initialize();
 
 	
@@ -179,192 +179,113 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				git_checkout_options	checkout_options = 
 					GIT_CHECKOUT_OPTIONS_INIT;
 
+				git_oid fetch_head_oid;
+				git_reference_name_to_id(&fetch_head_oid, satellite.repo, "FETCH_HEAD");
+				git_commit_lookup(&remote_commit, satellite.repo, &fetch_head_oid);
+
 				merge_options.file_flags = GIT_MERGE_FILE_STYLE_MERGE;
 				checkout_options.checkout_strategy = GIT_CHECKOUT_SAFE;
 
-				//LG_CHCKD(
-				//	git_merge_commits(&merge_index, satellite.repo,
-				//					  satellite_commit, remote_commit,
-				//					  &merge_options));
-			
-				git_annotated_commit*	fetch_head;
-				git_oid					fetch_head_oid;
-				git_reference_name_to_id(&fetch_head_oid, satellite.repo, "FETCH_HEAD");
-				git_annotated_commit_lookup(&fetch_head, satellite.repo, &fetch_head_oid);
+				LG_CHCKD(
+					git_merge_commits(&merge_index, satellite.repo,
+									  satellite_commit, remote_commit,
+									  &merge_options)
+				);
+
+				size_t entry_count = git_index_entrycount(merge_index);
+				for (int i = 0; i < entry_count; ++i)
+				{
+					const git_index_entry* entry = git_index_get_byindex(merge_index, i);
+					int j = 0;
+					j++;
+				}
 				
-				git_repository_fetchhead_foreach(
-					satellite.repo,
-					ys::git::callback::find_merge_branch,
-					&fetch_head_oid);
-
-				const git_annotated_commit* their_heads[] = { 
-					fetch_head
-				};        
-				git_merge(satellite.repo, their_heads, 1, 
-						  &merge_options, &checkout_options);
-				git_repository_index(&merge_index, satellite.repo);
-
-
+				if (git_index_has_conflicts(merge_index))
 				{
 					git_index_conflict_iterator*	conflict_ite;
-					// TODO: First iteration on conflict resolution and test
 					git_index_conflict_iterator_new(&conflict_ite, merge_index);
 
-					std::vector<std::string>	files;
+					std::vector<git_index_entry*> unconflicted_entries;
 
-					const git_index_entry*	ancestor;
-					const git_index_entry*	ours;
-					const git_index_entry*	theirs;
+					const git_index_entry *ancestor, *ours, *theirs;
 					while (git_index_conflict_next(&ancestor, &ours, &theirs,
 												   conflict_ite) != GIT_ITEROVER)
 					{
-						std::string		full_path =
-							satellite_path + ancestor->path;
-						ys::git::file::ResolutionStyle	preference = 
-							ys::git::file::kStyleDefault;
+						git_index_entry* resolution = new git_index_entry;
+						unsigned long long ours_time, theirs_time;
+						ours_time = ys::platform::file::last_write_time(satellite_path + ours->path);
+						theirs_time = ys::platform::file::last_write_time(central_path + theirs->path);
+
+						if (ours_time > theirs_time)
+							*resolution = *ours;
+						else
+							*resolution = *theirs;
 						
-						files.emplace_back(full_path);
+						size_t path_length = strlen(ancestor->path) + 1;
+						char* buffer = new char[path_length];
+						memcpy_s(buffer, path_length, ancestor->path, path_length);
+						resolution->path = buffer;
 
-						const git_index_entry*	ancestor_test =
-							git_index_get_bypath(merge_index, ancestor->path,
-												 GIT_INDEX_STAGE_ANCESTOR);
+						entry_count = git_index_entrycount(merge_index);
 
-						const git_index_entry*	ours_test =
-							git_index_get_bypath(merge_index, ancestor->path,
-												 GIT_INDEX_STAGE_OURS);
+						GIT_IDXENTRY_STAGE_SET(resolution, GIT_INDEX_STAGE_NORMAL);
+						
+						if (!(resolution->flags & GIT_IDXENTRY_VALID))
+							resolution->flags |= GIT_IDXENTRY_VALID;
 
-						const git_index_entry*	theirs_test =
-							git_index_get_bypath(merge_index, ancestor->path,
-												 GIT_INDEX_STAGE_THEIRS);
-
-						const git_index_entry*	other_test =
-							git_index_get_byindex(merge_index, 0);
-
-						git_index_entry		new_entry;
-
-						if (ours->mtime.seconds > theirs->mtime.seconds)
-						{
-							preference = ys::git::file::kStyleOurs;
-							//ys::git::file::file_resolve_conflicts(full_path,
-							//									  preference);
-							//git_index_add_bypath(merge_index, ours->path);
-							//git_index_add(merge_index, ours);
-
-							new_entry = *ours;
-							new_entry.flags &= ~GIT_IDXENTRY_CONFLICTED;
-							GIT_IDXENTRY_STAGE_SET(&new_entry, 
-												   GIT_INDEX_STAGE_NORMAL);
-							git_index_conflict_remove(merge_index,
-													  ancestor->path);
-							git_index_add(merge_index, &new_entry);
-						}
-						else
-						{
-							preference = ys::git::file::kStyleTheirs;
-							//ys::git::file::file_resolve_conflicts(full_path,
-							//									  preference);
-							//git_index_add_bypath(merge_index, theirs->path);
-							//git_index_add(merge_index, theirs);
-
-							new_entry = *theirs;
-							new_entry.flags &= ~GIT_IDXENTRY_CONFLICTED;
-							GIT_IDXENTRY_STAGE_SET(&new_entry,
-												   GIT_INDEX_STAGE_NORMAL);
-							git_index_conflict_remove(merge_index,
-													  ancestor->path);
-							git_index_add(merge_index, &new_entry);
-						}
-
-						git_index_write(merge_index);
-
-						// NOTE: Conflict resolution is not really handled by
-						//		 libgit2. So we have to do it ourselves, by 
-						//		 openning each file and rewrite it using only
-						//		 relevant data.
-
-						//git_index_conflict_remove(merge_index, ours->path);
+						entry_count = git_index_entrycount(merge_index);
+						
+						unconflicted_entries.push_back(resolution);
 					}
 
-					for (std::vector<std::string>::iterator it = files.begin();
-						 it != files.end(); ++it)
+					for (auto ite = unconflicted_entries.begin();
+						 ite != unconflicted_entries.end(); ite++)
 					{
-						//LG_CHCKD(
-						//git_index_conflict_remove(merge_index, it->c_str()));
-						//git_index_write(merge_index);
+						git_index_add(merge_index, (*ite));
 
-						git_status_t	status;
-						git_status_file((unsigned int*)&status, satellite.repo,
-										it->c_str());
-						if (status & GIT_STATUS_CONFLICTED)
-							std::cout << "alerte" << std::endl;
-						else
-							std::cout << "ok?" << std::endl;
+						//entry_count = git_index_entrycount(merge_index);
+						//LG_CHCKD(git_index_conflict_remove(merge_index, ite->path));
+						//entry_count = git_index_entrycount(merge_index);
+						LG_CHCKD(git_index_remove(merge_index, (*ite)->path, 1));
+						//entry_count = git_index_entrycount(merge_index);
+						LG_CHCKD(git_index_remove(merge_index, (*ite)->path, 2));
+						//entry_count = git_index_entrycount(merge_index);
+						LG_CHCKD(git_index_remove(merge_index, (*ite)->path, 3));
+						//
+						//entry_count = git_index_entrycount(merge_index);
+
+						delete (*ite)->path;
+						delete *ite;
 					}
 
-					// STAGE
-					git_index_write(merge_index);
-					// FREE
-					git_index_conflict_iterator_free(conflict_ite);
-				}
-
-				// COMMIT
-				git_oid				merge_commit_oid, merge_tree_oid;
-				git_tree*			merge_tree;
-
-				git_commit*			fetch_commit;
-				git_commit_lookup(&fetch_commit, satellite.repo, 
-								  &fetch_head_oid);
-
-				git_signature*		signature;
-				git_signature_now(&signature, ys::git::core::c_commit_author,
-								  ys::git::core::c_commit_email);
-
-				const git_commit*	merge_parents[] = { 
-					satellite_commit, fetch_commit
-				};
-
-
-				git_index_write_tree(&merge_tree_oid, merge_index);
-				git_tree_lookup(&merge_tree, satellite.repo, &merge_tree_oid);
-
- 				LG_CHCKD(
-					git_commit_create(&merge_commit_oid, satellite.repo, "HEAD",
-									  signature, 
-									  signature,
-									  "UTF-8", "",
-									  merge_tree, 2, merge_parents));
-
-				git_signature_free(signature);
-				// PUSH
-
-				git_repository_state_cleanup(satellite.repo);
-				ys::git::core::satellite_push(satellite);
-
-				// NOTE: This conflict resolution should be alright.
-#if 0
-				{
-					git_index*						local_index;
-					git_index_conflict_iterator*	conflict_ite;
-					git_repository_index(&local_index, repo);
-					git_index_conflict_iterator_new(&conflict_ite, local_index);
-
-					const git_index_entry*	ancestor;
-					const git_index_entry*	ours;
-					const git_index_entry*	theirs;
-					while (git_index_conflict_next(&ancestor, &ours, &theirs,
-												   conflict_ite) != GIT_ITEROVER)
-					{
-						if (ours->mtime.seconds > theirs->mtime.seconds)
-							git_index_entry_stage(ours);
-						else
-							git_index_entry_stage(theirs);
-					}
+					git_index_conflict_cleanup(merge_index);
+					entry_count = git_index_entrycount(merge_index);
 
 					git_index_conflict_iterator_free(conflict_ite);
-					git_index_free(local_index);
-					git_repository_state_cleanup(repo);
+
+					git_oid merge_tree_id;
+					git_tree* merge_tree;
+
+					LG_CHCKD(git_index_write_tree_to(&merge_tree_id, merge_index, satellite.repo));
+					LG_CHCKD(git_checkout_index(satellite.repo, merge_index, &checkout_options));
+					LG_CHCKD(git_tree_lookup(&merge_tree, satellite.repo, &merge_tree_id));
+
+					git_signature* signature;
+					git_signature_now(&signature, ys::git::core::c_commit_author,
+									  ys::git::core::c_commit_email);
+
+					git_oid commit_id;
+					const git_commit* parents[] = { satellite_commit, remote_commit };
+
+					LG_CHCKD(
+						git_commit_create(&commit_id, satellite.repo, "HEAD",
+										  signature, signature,
+										  "UTF-8", "",
+										  merge_tree, 2, parents));
+
+					LG_CHCKD(git_repository_state_cleanup(satellite.repo));
+					ys::git::core::satellite_push(satellite);
 				}
-#endif
 			}
 			// Case 0 and 2
 			else if (analysis_out & GIT_MERGE_ANALYSIS_UP_TO_DATE)

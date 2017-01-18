@@ -133,7 +133,7 @@ void
 satellite_push(ys_satellite& satellite)
 {
 	// NOTE: git_remote_push doesn't work locally, UNLESS the remote is bare.
-	//		 In order to acutally push data from a satellite to central, we have
+	//		 In order to actually push data from a satellite to central, we have
 	//		 to turn our remote into a bare repo, do the push, and turn it back.
 	//		 Doing so doesn't seem to clear our central working dir, 
 	//		 but it might, I don't know man.
@@ -168,7 +168,7 @@ satellite_push(ys_satellite& satellite)
 
 	git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
 	checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
-	git_checkout_head(remote_repo, &checkout_options);
+	LG_CHCKD(git_checkout_head(remote_repo, &checkout_options));
 
 	git_repository_free(remote_repo);
 }
@@ -255,6 +255,9 @@ repository_commit(git_repository* repo)
 	git_index*			index;
 	git_oid				commit_id, tree_id;
 	git_tree*			tree;
+	git_signature*		signature;
+
+	git_signature_now(&signature, c_commit_author, c_commit_email);
 
 	git_repository_index(&index, repo);
 
@@ -269,7 +272,7 @@ repository_commit(git_repository* repo)
 
 	LG_CHCKD(
 		git_commit_create(&commit_id, repo, "HEAD",
-						  g_ys_signature, g_ys_signature,
+						  signature, signature,
 						  "UTF-8", "",
 						  tree, 1, parents));
 
