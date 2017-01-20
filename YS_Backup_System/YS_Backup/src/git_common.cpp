@@ -1,5 +1,8 @@
 #include "git_common.hpp"
 
+#include <vector>
+#include "win32_common.hpp"
+
 namespace ys {
 namespace git {
 
@@ -9,14 +12,12 @@ void
 initialize()
 {
 	git_libgit2_init();
-	git_signature_now(&g_ys_signature, c_commit_author, c_commit_email);
 }
 
 
 void 
 shutdown()
 {
-	git_signature_free(g_ys_signature);
 	git_libgit2_shutdown();
 }
 
@@ -30,19 +31,20 @@ central_init(const std::string& path)
 	git_oid				head_id, tree_id;
 	git_tree*			tree;
 
-	LG_CHCKD(
-		git_repository_init(&central, path.c_str(), false));
+	LG_CHCKD(git_repository_init(&central, path.c_str(), false));
 
 	// Get the current index and the corresponding tree.
 	git_repository_index(&index, central);
 	git_index_write_tree(&tree_id, index);
 	git_tree_lookup(&tree, central, &tree_id);
 
+	git_signature* signature = signature_default_now();
 	LG_CHCKD(
 		git_commit_create_v(&head_id, central, "HEAD",
-							g_ys_signature, g_ys_signature,
+							signature, signature,
 							nullptr, "",
-							tree, 0));
+							tree, 0)
+	);
 
 	git_index_free(index);
 	git_tree_free(tree);
@@ -174,6 +176,57 @@ satellite_push(ys_satellite& satellite)
 }
 
 
+void
+satellite_merge_with_remote(ys_satellite& satellite)
+{
+	git_merge_options merge_options = GIT_MERGE_OPTIONS_INIT;
+	merge_options.file_flags = GIT_MERGE_FILE_STYLE_MERGE;
+	git_checkout_options checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
+	checkout_options.checkout_strategy = GIT_CHECKOUT_SAFE;
+
+	git_commit*			satellite_commit = 
+		ys::git::core::repository_head_commit(satellite.repo);
+	git_commit*			remote_commit;
+	git_oid				fetch_head_oid;
+	git_reference_name_to_id(&fetch_head_oid, satellite.repo, "FETCH_HEAD");
+	git_commit_lookup(&remote_commit, satellite.repo, &fetch_head_oid);
+
+	git_index*			merge_index;
+	LG_CHCKD(
+		git_merge_commits(&merge_index, satellite.repo,
+						  satellite_commit, remote_commit,
+						  &merge_options)
+	);
+
+	if (git_index_has_conflicts(merge_index))
+	{
+		std::string satellite_path(git_repository_workdir(satellite.repo));
+		std::string remote_path(git_remote_url(satellite.origin) + std::string("/"));
+		ys::git::core::merge_conflict_resolve(merge_index, satellite_path, remote_path);
+	}
+
+	git_oid merge_tree_id;
+	git_tree* merge_tree;
+	LG_CHCKD(git_index_write_tree_to(&merge_tree_id, merge_index, satellite.repo));
+	LG_CHCKD(git_tree_lookup(&merge_tree, satellite.repo, &merge_tree_id));
+
+	LG_CHCKD(git_checkout_index(satellite.repo, merge_index, &checkout_options));
+
+	git_signature* signature = signature_default_now();
+	git_oid commit_id;
+	const git_commit* parents[] = { satellite_commit, remote_commit };
+
+	LG_CHCKD(
+		git_commit_create(&commit_id, satellite.repo, "HEAD",
+						  signature, signature,
+						  "UTF-8", "",
+						  merge_tree, 2, parents));
+
+	LG_CHCKD(git_repository_state_cleanup(satellite.repo));
+	ys::git::core::satellite_push(satellite);
+}
+
+
 git_repository*
 repository_open(const std::string& path)
 {
@@ -232,8 +285,7 @@ repository_needs_commit(git_repository* repo)
 		GIT_STATUS_OPT_INCLUDE_UNTRACKED |
 		GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
 
-	LG_CHCKD(
-		git_status_list_new(&statuses, repo, &status_options));
+	LG_CHCKD(git_status_list_new(&statuses, repo, &status_options));
 	size_t status_count = git_status_list_entrycount(statuses);
 
 	needs_commit = (status_count > 0);
@@ -255,26 +307,22 @@ repository_commit(git_repository* repo)
 	git_index*			index;
 	git_oid				commit_id, tree_id;
 	git_tree*			tree;
-	git_signature*		signature;
-
-	git_signature_now(&signature, c_commit_author, c_commit_email);
 
 	git_repository_index(&index, repo);
 
-	LG_CHCKD(
-		git_index_add_all(index, &arr,
-						  GIT_INDEX_ADD_DEFAULT,
-						  ys::git::callback::always_add, nullptr));
+	LG_CHCKD(git_index_add_all(index, &arr, 
+							   GIT_INDEX_ADD_DEFAULT,
+							   ys::git::callback::always_add, nullptr));
 
 	git_index_write(index);
 	git_index_write_tree(&tree_id, index);
 	git_tree_lookup(&tree, repo, &tree_id);
 
-	LG_CHCKD(
-		git_commit_create(&commit_id, repo, "HEAD",
-						  signature, signature,
-						  "UTF-8", "",
-						  tree, 1, parents));
+	git_signature*		signature = signature_default_now();
+	LG_CHCKD(git_commit_create(&commit_id, repo, "HEAD",
+							   signature, signature,
+							   "UTF-8", "",
+							   tree, 1, parents));
 
 	git_tree_free(tree);
 	git_index_free(index);
@@ -289,17 +337,100 @@ repository_checkout(git_repository* repo)
 }
 
 
+void
+merge_conflict_resolve(git_index* index, std::string& ours_root, std::string& theirs_root)
+{
+	git_index_conflict_iterator*	conflict_ite;
+	git_index_conflict_iterator_new(&conflict_ite, index);
+
+	std::vector<git_index_entry*> unconflicted_entries;
+
+	const git_index_entry *ancestor, *ours, *theirs;
+	while (git_index_conflict_next(&ancestor, &ours, &theirs,
+								   conflict_ite) != GIT_ITEROVER)
+	{
+		unsigned long long ours_time, theirs_time;
+		ours_time = ys::win32::file::last_write_time(ours_root + ours->path);
+		theirs_time = ys::win32::file::last_write_time(theirs_root + theirs->path);
+
+		git_index_entry* resolution = new git_index_entry;
+		if (ours_time > theirs_time)
+			ys::git::utility::index_entry_copy(resolution, ours);
+		else
+			ys::git::utility::index_entry_copy(resolution, theirs);
+
+		GIT_IDXENTRY_STAGE_SET(resolution, GIT_INDEX_STAGE_NORMAL);
+		if (!(resolution->flags & GIT_IDXENTRY_VALID))
+			resolution->flags |= GIT_IDXENTRY_VALID;
+
+		unconflicted_entries.push_back(resolution);
+	}
+
+
+	for (auto ite = unconflicted_entries.begin();
+		 ite != unconflicted_entries.end(); ite++)
+	{
+		git_index_add(index, (*ite));
+
+		LG_CHCKD(git_index_conflict_remove(index, (*ite)->path));
+
+		ys::git::utility::index_entry_free(*ite);
+	}
+
+	git_index_conflict_iterator_free(conflict_ite);
+}
+
+
+git_signature*
+signature_default_now()
+{
+	git_signature* signature;
+	git_signature_now(&signature, k_commit_author, k_commit_email);
+	return signature;
+}
+
+
 } // namespace core
+
+
+namespace utility {
+
+
+void
+index_entry_copy(git_index_entry* destination, const git_index_entry* source)
+{
+	*destination = *source;
+
+	size_t path_length = strlen(source->path) + 1;
+	char* buffer = new char[path_length];
+	memcpy_s(buffer, path_length, source->path, path_length);
+	destination->path = buffer;
+}
+
+
+void
+index_entry_free(git_index_entry* entry)
+{
+	delete[] entry->path;
+	delete entry;
+}
+
+
+} // namespace utility
+
 
 namespace callback {
 
 
+static int g_callback_count = 0;
 int
 always_add(const char* path,
 		   const char* matched_pathspec,
 		   void* payload)
 {
 	// NOTE: return 0 to add, < 0 to abort, and > 0 to skip
+	g_callback_count++;
+	std::cout << g_callback_count << std::endl;
 	return 0;
 }
 

@@ -4,7 +4,7 @@
 
 #include "git_common.hpp"
 #include "git_file.hpp"
-#include "win_file.hpp"
+#include "win32_common.hpp"
 
 #include "git2.h"
 
@@ -156,8 +156,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			// [ ] 0_ Do nothing
 			// [X] 1_ Checkout Satellite
 			// [X] 2_ Push Satellite
-			// [ ] 3_ Merge
-			// [ ] 4_ Merge, resolve conflicts
+			// [X] 3_ Merge
+			// [X] 4_ Merge, resolve conflicts
 
 			// Case 1
 			if (analysis_out & GIT_MERGE_ANALYSIS_FASTFORWARD)
@@ -167,134 +167,13 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 			// Case 3 and 4
 			else if (analysis_out & GIT_MERGE_ANALYSIS_NORMAL)
 			{
-				int i = 0;
-				i += 1;
-
-				git_index*			merge_index;
-				git_commit*			satellite_commit = 
-					ys::git::core::repository_head_commit(satellite.repo);
-				git_commit*			remote_commit =
-					ys::git::core::repository_head_commit(remote_repo);
-				git_merge_options		merge_options = GIT_MERGE_OPTIONS_INIT;
-				git_checkout_options	checkout_options = 
-					GIT_CHECKOUT_OPTIONS_INIT;
-
-				git_oid fetch_head_oid;
-				git_reference_name_to_id(&fetch_head_oid, satellite.repo, "FETCH_HEAD");
-				git_commit_lookup(&remote_commit, satellite.repo, &fetch_head_oid);
-
-				merge_options.file_flags = GIT_MERGE_FILE_STYLE_MERGE;
-				checkout_options.checkout_strategy = GIT_CHECKOUT_SAFE;
-
-				LG_CHCKD(
-					git_merge_commits(&merge_index, satellite.repo,
-									  satellite_commit, remote_commit,
-									  &merge_options)
-				);
-
-				size_t entry_count = git_index_entrycount(merge_index);
-				for (int i = 0; i < entry_count; ++i)
-				{
-					const git_index_entry* entry = git_index_get_byindex(merge_index, i);
-					int j = 0;
-					j++;
-				}
-				
-				if (git_index_has_conflicts(merge_index))
-				{
-					git_index_conflict_iterator*	conflict_ite;
-					git_index_conflict_iterator_new(&conflict_ite, merge_index);
-
-					std::vector<git_index_entry*> unconflicted_entries;
-
-					const git_index_entry *ancestor, *ours, *theirs;
-					while (git_index_conflict_next(&ancestor, &ours, &theirs,
-												   conflict_ite) != GIT_ITEROVER)
-					{
-						git_index_entry* resolution = new git_index_entry;
-						unsigned long long ours_time, theirs_time;
-						ours_time = ys::platform::file::last_write_time(satellite_path + ours->path);
-						theirs_time = ys::platform::file::last_write_time(central_path + theirs->path);
-
-						if (ours_time > theirs_time)
-							*resolution = *ours;
-						else
-							*resolution = *theirs;
-						
-						size_t path_length = strlen(ancestor->path) + 1;
-						char* buffer = new char[path_length];
-						memcpy_s(buffer, path_length, ancestor->path, path_length);
-						resolution->path = buffer;
-
-						entry_count = git_index_entrycount(merge_index);
-
-						GIT_IDXENTRY_STAGE_SET(resolution, GIT_INDEX_STAGE_NORMAL);
-						
-						if (!(resolution->flags & GIT_IDXENTRY_VALID))
-							resolution->flags |= GIT_IDXENTRY_VALID;
-
-						entry_count = git_index_entrycount(merge_index);
-						
-						unconflicted_entries.push_back(resolution);
-					}
-
-					for (auto ite = unconflicted_entries.begin();
-						 ite != unconflicted_entries.end(); ite++)
-					{
-						git_index_add(merge_index, (*ite));
-
-						//entry_count = git_index_entrycount(merge_index);
-						//LG_CHCKD(git_index_conflict_remove(merge_index, ite->path));
-						//entry_count = git_index_entrycount(merge_index);
-						LG_CHCKD(git_index_remove(merge_index, (*ite)->path, 1));
-						//entry_count = git_index_entrycount(merge_index);
-						LG_CHCKD(git_index_remove(merge_index, (*ite)->path, 2));
-						//entry_count = git_index_entrycount(merge_index);
-						LG_CHCKD(git_index_remove(merge_index, (*ite)->path, 3));
-						//
-						//entry_count = git_index_entrycount(merge_index);
-
-						delete (*ite)->path;
-						delete *ite;
-					}
-
-					git_index_conflict_cleanup(merge_index);
-					entry_count = git_index_entrycount(merge_index);
-
-					git_index_conflict_iterator_free(conflict_ite);
-
-					git_oid merge_tree_id;
-					git_tree* merge_tree;
-
-					LG_CHCKD(git_index_write_tree_to(&merge_tree_id, merge_index, satellite.repo));
-					LG_CHCKD(git_checkout_index(satellite.repo, merge_index, &checkout_options));
-					LG_CHCKD(git_tree_lookup(&merge_tree, satellite.repo, &merge_tree_id));
-
-					git_signature* signature;
-					git_signature_now(&signature, ys::git::core::c_commit_author,
-									  ys::git::core::c_commit_email);
-
-					git_oid commit_id;
-					const git_commit* parents[] = { satellite_commit, remote_commit };
-
-					LG_CHCKD(
-						git_commit_create(&commit_id, satellite.repo, "HEAD",
-										  signature, signature,
-										  "UTF-8", "",
-										  merge_tree, 2, parents));
-
-					LG_CHCKD(git_repository_state_cleanup(satellite.repo));
-					ys::git::core::satellite_push(satellite);
-				}
+				ys::git::core::satellite_merge_with_remote(satellite);
 			}
 			// Case 0 and 2
 			else if (analysis_out & GIT_MERGE_ANALYSIS_UP_TO_DATE)
 			{
-				// NOTE: Procedure 0 is not implemented yet, Case 0 and 2 share
-				//		 the same procedure.
-
 				ys::git::core::satellite_push(satellite);
-				//ys::git::core::satellite_fetch(satellite);
+				ys::git::core::satellite_fetch(satellite);
 			}
 			// Default
 			else if (analysis_out & GIT_MERGE_ANALYSIS_NONE)
@@ -302,18 +181,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 				ys::git::core::satellite_checkout(satellite);
 			}
 
-
-			if (0)
-			{
-				ys::git::core::satellite_push(satellite);
-
-				// Fetching our central modified state is necessary.
-				ys::git::core::satellite_fetch(satellite);
-			}
-
-			// NOTE: We still need to check if fast-forward is possible.
-			//ys::git::core::satellite_checkout(satellite);
-	
 			ys::git::core::satellite_free(satellite);
 		}
 		else
@@ -323,214 +190,6 @@ WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int)
 		ys::git::core::shutdown();
 	}
 
-	if (0)
-	{
-		git_libgit2_init();
-		
-		git_signature*	signature;
-		git_signature_now(&signature, "YS_Backup", "YS_Backup@notanemail.ys");
-
-		// MAIN DRIVE REPOSITORY CREATION
-		{
-			std::string		repo_path = test_env_root + test_main_drive;
-
-			git_repository* repo;
-			bool			repo_exists;
-
-			git_commit*		head_commit;
-
-			repo_exists = git_repository_open_ext(nullptr, repo_path.c_str(),
-												  GIT_REPOSITORY_OPEN_NO_SEARCH,
-												  nullptr) == 0;
-			if (repo_exists)
-			{	// GET EXISTING REPO
-				git_oid		head_id;
-			
-				LG_CHCKD(
-					git_repository_open(&repo, repo_path.c_str()));
-
-				git_reference_name_to_id(&head_id, repo, "HEAD");
-				git_commit_lookup(&head_commit, repo, &head_id);
-			}
-			else
-			{	// CREATE REPO AND MAKE FIRST COMMIT
-				git_index*	index;
-				git_oid		head_id, tree_id;
-				git_tree*	tree;
-
-				LG_CHCKD(
-					git_repository_init(&repo, repo_path.c_str(), false));
-				
-				// Get the current index and the corresponding tree.
-				git_repository_index(&index, repo);
-				git_index_write_tree(&tree_id, index);
-				git_tree_lookup(&tree, repo, &tree_id);
-
-				LG_CHCKD(
-					git_commit_create_v(&head_id, repo, "HEAD",
-										signature, signature, 
-										nullptr, "",
-										tree, 0));
-				git_commit_lookup(&head_commit, repo, &head_id);
-
-				git_index_free(index);
-				git_tree_free(tree);
-			}
-
-			// RUN SOME KIND OF GIT STATUS
-			bool needs_commit = false;
-			{
-				git_status_options	status_options = GIT_STATUS_OPTIONS_INIT;
-				status_options.flags = 
-					GIT_STATUS_OPT_INCLUDE_UNTRACKED |
-					GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
-
-				git_status_list*	statuses = nullptr;
-				
-				git_status_list_new(&statuses, repo, &status_options);
-				size_t status_count = git_status_list_entrycount(statuses);
-
-				needs_commit = status_count > 0;
-
-				git_status_list_free(statuses);
-			}
-
-			// COMMIT CHANGES TO CENTRAL
-			if (needs_commit)
-			{
-				const git_commit*	parents[] = { head_commit };
-				char*				paths[] = { "." };
-				git_strarray		arr = { paths, 1 };
-				git_index*			index;
-				git_oid				commit_id, tree_id;
-				git_tree*			tree;
-
-				git_repository_index(&index, repo);
-
-				LG_CHCKD(
-					git_index_add_all(index, &arr, 
-									  GIT_INDEX_ADD_DEFAULT, 
-									  ys_git_add_all, nullptr));
-
-				git_index_write(index);
-				git_index_write_tree(&tree_id, index);
-				git_tree_lookup(&tree, repo, &tree_id);
-
-				LG_CHCKD(
-					git_commit_create(&commit_id, repo, "HEAD",
-										signature, signature,
-										"UTF-8", "",
-										tree, 1, parents));
-				
-				git_tree_free(tree);
-				git_index_free(index);
-			}
-			
-			git_repository_free(repo);
-		} // MAIN REPOSITORY CREATION
-
-		// SATELLITE DRIVES CLONE
-		{
-			std::string		repo_path = test_env_root + test_drive_A;
-
-			git_repository* repo;
-			bool			repo_exists;
-				
-			repo_exists = git_repository_open_ext(nullptr, repo_path.c_str(),
-												  GIT_REPOSITORY_OPEN_NO_SEARCH,
-												  nullptr) == 0;
-			
-			if (repo_exists)
-			{
-				// NOTE: If the repository exists, we have to pull modifications from remote.
-				git_remote*				origin;
-
-				LG_CHCKD(
-					git_repository_open(&repo, repo_path.c_str()));
-
-				git_remote_lookup(&origin, repo, "origin");
-				
-				git_fetch_options	fetch_options = GIT_FETCH_OPTIONS_INIT;
-				git_remote_fetch(origin, nullptr, 
-								 &fetch_options, "fetch");
-
-				// NOTE: First we gather data relative to our fetch_head
-				git_reference*			fetch_head_ref;
-				git_annotated_commit*	fetch_head_commit;
-				git_oid					fetch_head_oid;
-
-				git_reference_lookup(&fetch_head_ref, repo, "FETCH_HEAD");
-					
-				git_annotated_commit_from_ref(&fetch_head_commit, repo,
-												fetch_head_ref);
-				// THIS IS WHERE WE COULD DO A MERGE ANALYSIS
-				
-				// IN CASE OF A FAST-FORWARD MERGE
-				{
-					// NOTE: Then we perform a fast-forward merge. 
-					//		 - Change the master ref target
-					//		 - Checkout head
-					git_reference*			merge_result_head;
-					git_reference*			master_head_ref;
-					
-					git_reference_lookup(&master_head_ref, repo, "refs/heads/master");
-
-					git_oid_cpy(&fetch_head_oid, git_reference_target(fetch_head_ref));
-					git_reference_set_target(&merge_result_head, master_head_ref,
-											 &fetch_head_oid, "fast-forward");
-					
-					git_checkout_options	checkout_options = GIT_CHECKOUT_OPTIONS_INIT;
-					checkout_options.checkout_strategy = GIT_CHECKOUT_FORCE;
-					git_checkout_head(repo, &checkout_options);
-
-					git_reference_free(merge_result_head);
-					git_reference_free(master_head_ref);
-				}
-				git_annotated_commit_free(fetch_head_commit);
-				git_reference_free(fetch_head_ref);
-
-				// NOTE: This conflict resolution should be alright.
-				{
-					git_index*						local_index;
-					git_index_conflict_iterator*	conflict_ite;
-					git_repository_index(&local_index, repo);
-					git_index_conflict_iterator_new(&conflict_ite, local_index);
-				
-					const git_index_entry*	ancestor;
-					const git_index_entry*	ours;
-					const git_index_entry*	theirs;
-					while (git_index_conflict_next(&ancestor, &ours, &theirs, 
-						   conflict_ite) != GIT_ITEROVER)
-					{
-						if (ours->mtime.seconds > theirs->mtime.seconds)
-							git_index_entry_stage(ours);
-						else
-							git_index_entry_stage(theirs);
-					}
-					
-					git_index_conflict_iterator_free(conflict_ite);
-					git_index_free(local_index);
-					git_repository_state_cleanup(repo);
-				}
-
-
-				git_remote_free(origin);
-			} // if (repo_exists)
-			else
-			{
-				std::string		source_path = test_env_root + test_main_drive;
-
-				LG_CHCKD(
-					git_clone(&repo, source_path.c_str(), repo_path.c_str(), 
-							  nullptr));
-			}
-
-			git_repository_free(repo);
-		}
-
-		git_signature_free(signature);
-		git_libgit2_shutdown();
-	}
 
 	if (0)
 	{

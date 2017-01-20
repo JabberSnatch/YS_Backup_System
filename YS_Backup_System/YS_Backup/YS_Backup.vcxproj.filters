@@ -21,10 +21,7 @@
     <ClCompile Include="src\git_common.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\git_file.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="src\win_file.cpp">
+    <ClCompile Include="src\win32_common.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -35,10 +32,7 @@
     <ClInclude Include="include\git_common.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\git_file.hpp">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="include\win_file.hpp">
+    <ClInclude Include="include\win32_common.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

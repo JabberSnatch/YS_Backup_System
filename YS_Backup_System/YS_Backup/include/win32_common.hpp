@@ -4,15 +4,22 @@
 #include <string>
 
 namespace ys {
-namespace platform {
-namespace file {
+namespace win32 {
 
+namespace file {
 
 unsigned long long last_write_time(const std::string& path);
 
-
 } // namespace file
-} // namespace platform
+
+
+namespace time {
+
+std::string now_string();
+
+} // namespace time
+
+} // namespace win32
 } // namespace ys
 
 

@@ -33,8 +33,6 @@ struct ys_satellite
 void	initialize();
 void	shutdown();
 
-// NOTE: As there should always be a single central available at all time,
-//		 wouldn't it be a good idea to make it a global ?
 git_repository*		central_init(const std::string& path);
 
 ys_satellite		satellite_clone(const std::string& path, 
@@ -47,6 +45,9 @@ void				satellite_free(ys_satellite& satellite);
 void				satellite_checkout(ys_satellite& satellite);
 // Broadcasts the satellite's commits to its central.
 void				satellite_push(ys_satellite& satellite);
+// Performs a merge with satellite's origin and resolves any arising conflicts
+// using merge_conflict_remove.
+void				satellite_merge_with_remote(ys_satellite& satellite);
 
 git_repository*			repository_open(const std::string& path);
 bool					repository_exists(const std::string& path);
@@ -57,19 +58,32 @@ void					repository_commit(git_repository* repo);
 void					repository_checkout(git_repository* repo);
 
 
-static git_signature*		g_ys_signature;
-static const char			c_commit_author[] = "YS_Backup";
-static const char			c_commit_email[] = "YS_Backup@notanemail.ys";
+// Tries and resolves conflicts on the given index.
+// It simply pick the latest revision using system calls.
+// Root string should have a trailing slash.
+void	merge_conflict_resolve(git_index* index, std::string& ours_root, std::string& theirs_root);
+
+
+git_signature*			signature_default_now();
+static const char			k_commit_author[] = "YS_Backup";
+static const char			k_commit_email[] = "YS_Backup@notanemail.ys";
 
 
 // FUTURE CANDIDATES:
 bool				satellite_is_fast_forward(ys_satellite& satellite);
-void				satellite_merge_with_origin(ys_satellite& satellite);
 
 git_commit*			repository_get_commit(git_repository* repo,
 										  const std::string&);
 
 } // namespace core
+
+
+namespace utility {
+
+void	index_entry_copy(git_index_entry* destination, const git_index_entry* source);
+void	index_entry_free(git_index_entry* entry);
+
+} // namespace utility
 
 
 namespace callback {
